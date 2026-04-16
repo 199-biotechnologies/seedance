@@ -35,6 +35,23 @@ struct DoctorReport {
     summary: DoctorSummary,
 }
 
+fn companion_check(binary: &'static str, install_hint: &'static str, unlocks: &'static str) -> DoctorCheck {
+    match which::which(binary) {
+        Ok(path) => DoctorCheck {
+            name: binary,
+            status: CheckStatus::Pass,
+            message: format!("{} ({})", path.display(), unlocks),
+            suggestion: None,
+        },
+        Err(_) => DoctorCheck {
+            name: binary,
+            status: CheckStatus::Warn,
+            message: format!("{binary} not on PATH -- {unlocks}"),
+            suggestion: Some(format!("Optional. Install: {install_hint}")),
+        },
+    }
+}
+
 fn is_not_found(code: &str) -> bool {
     let lower = code.to_ascii_lowercase();
     code == "404"
@@ -143,6 +160,18 @@ pub fn run(ctx: Ctx, cfg: &AppConfig) -> Result<(), AppError> {
             suggestion: None,
         });
     }
+
+    // Companion tools -- not hard requirements, but unlock feature subcommands.
+    checks.push(companion_check(
+        "nanaban",
+        "npm i -g nanaban (or see https://github.com/199-biotechnologies/nanaban)",
+        "unlocks `seedance character-sheet` for consistent-person generations",
+    ));
+    checks.push(companion_check(
+        "ffmpeg",
+        "brew install ffmpeg (macOS) or apt install ffmpeg (linux)",
+        "unlocks `seedance audio-to-video` (the @simeonnz lyrics-preservation trick)",
+    ));
 
     let summary = DoctorSummary {
         pass: checks.iter().filter(|c| c.status == CheckStatus::Pass).count(),

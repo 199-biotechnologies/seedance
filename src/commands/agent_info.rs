@@ -61,6 +61,32 @@ pub fn run() {
                     {"name": "--api-key", "type": "string", "required": false}
                 ]
             },
+            "character-sheet": {
+                "description": "Build a 9-angle character reference sheet from a single photo via nanaban (Nano Banana Pro). Resulting PNG can be passed to `generate --image` to keep a specific person consistent across Seedance shots -- works around the single-face upload block.",
+                "args": [
+                    {"name": "input", "kind": "positional", "type": "string", "required": true, "description": "Path or URL of the subject photo"}
+                ],
+                "options": [
+                    {"name": "--output", "short": "-o", "type": "path",   "required": false, "description": "Output PNG path (default: ~/Documents/seedance/character-sheet-<hash>.png)"},
+                    {"name": "--style",                   "type": "string", "required": false, "description": "Extra styling hints to append to the grid prompt"},
+                    {"name": "--angles",                  "type": "integer", "required": false, "default": 9, "values": [4, 9], "description": "9 (3x3) or 4 (2x2) cells"}
+                ],
+                "requires": ["nanaban"],
+                "credit": "Community trick originated by @wtry1102 / @voxelplot Advanced Workflow #8"
+            },
+            "audio-to-video": {
+                "description": "Wrap an audio file inside a silent mp4 so it can be fed as `--video`. Workaround for Seedance 2.0's reference-audio-mutates-lyrics quirk. Uses ffmpeg.",
+                "args": [
+                    {"name": "input", "kind": "positional", "type": "path", "required": true, "description": "Input audio file (wav/mp3/m4a/etc)"}
+                ],
+                "options": [
+                    {"name": "--output",     "short": "-o", "type": "path",    "required": false, "description": "Output mp4 path (default: <input>.silent.mp4)"},
+                    {"name": "--background",                "type": "string",  "required": false, "default": "black", "values": ["black","white"]},
+                    {"name": "--height",                    "type": "integer", "required": false, "default": 480, "values": [480, 720]}
+                ],
+                "requires": ["ffmpeg"],
+                "credit": "@simeonnz via @MrDavids1"
+            },
             "models": {
                 "description": "List available Seedance model ids (alias: ls)",
                 "aliases": ["ls"],
@@ -136,7 +162,33 @@ pub fn run() {
             },
             "prompt_syntax": "Use [Image 1]..[Image N], [Video 1]..[Video 3], [Audio 1]..[Audio 3], and time codes like `[0-4s]: ...`"
         },
-        "auto_json_when_piped": true
+        "auto_json_when_piped": true,
+        "companion_tools": {
+            "nanaban": {
+                "purpose": "Image generation. Used by `seedance character-sheet` to render a 9-angle reference grid of a specific person (Nano Banana Pro / Gemini 3 Pro image).",
+                "install": "npm i -g nanaban",
+                "repo": "https://github.com/199-biotechnologies/nanaban",
+                "required_for": ["character-sheet"]
+            },
+            "ffmpeg": {
+                "purpose": "Media transcoding. Used by `seedance audio-to-video` to wrap audio in a silent mp4 (workaround for the lyrics-mutation quirk).",
+                "install": "brew install ffmpeg (macOS) or apt install ffmpeg (linux)",
+                "required_for": ["audio-to-video"]
+            }
+        },
+        "agent_workflows": {
+            "consistent_person_across_shots": [
+                "1. seedance character-sheet <single_photo> -o sheet.png",
+                "2. seedance generate --image sheet.png --prompt '...(subject from [Image 1]) ...' --wait",
+                "(The grid acts as a multi-angle subject reference. Do NOT also use --first-frame with the same photo -- multi-mode conflict.)"
+            ],
+            "exact_music_or_dialogue_preserved": [
+                "1. seedance audio-to-video song.mp3 -o song.silent.mp4",
+                "2. Host the mp4 at a public URL (S3 signed URL / catbox.moe / your CDN)",
+                "3. seedance generate --video <hosted_url> --prompt '...use [Video 1] as the soundtrack throughout...' --image <subject> --wait",
+                "(Passing raw --audio instead would let Seedance rewrite lyrics and melody.)"
+            ]
+        }
     });
     println!("{}", serde_json::to_string_pretty(&info).unwrap());
 }

@@ -61,6 +61,18 @@ fn main() {
             api_key,
         } => commands::download::run(ctx, id, output, api_key),
         Commands::Cancel { id, api_key } => commands::cancel::run(ctx, id, api_key),
+        Commands::CharacterSheet {
+            input,
+            output,
+            style,
+            angles,
+        } => commands::character_sheet::run(ctx, input, output, style, angles),
+        Commands::AudioToVideo {
+            input,
+            output,
+            background,
+            height,
+        } => commands::audio_to_video::run(ctx, input, output, background, height),
         Commands::Models => commands::models::run(ctx),
         Commands::Doctor => {
             config::load().and_then(|cfg| commands::doctor::run(ctx, &cfg))

@@ -39,6 +39,10 @@ Tips:
   * Use --wait to block until the task finishes and download the result in one command
   * Real human faces in references are blocked -- use faces from previously generated Seedance videos
   * Default output dir: ~/Documents/seedance/<task-id>.mp4 (override with -o /path/to/file.mp4)
+  * For a consistent person: `seedance character-sheet <photo>` (uses nanaban), then
+    pass the resulting PNG as --image. Bypasses Seedance's single-face upload block.
+  * For exact music/dialogue: `seedance audio-to-video <audio>` (uses ffmpeg) -> host the
+    resulting mp4 -> pass as --video. Preserves lyrics that --audio would otherwise rewrite.
 
 Examples:
   seedance generate --prompt \"A cat yawns at the camera\" --wait --output cat.mp4
@@ -148,6 +152,41 @@ pub enum Commands {
         /// API key override
         #[arg(long, env = "SEEDANCE_API_KEY", hide_env_values = true)]
         api_key: Option<String>,
+    },
+
+    /// Build a 9-angle character reference sheet from a single photo (uses nanaban/Nano Banana Pro).
+    /// The resulting grid can be passed to `generate --image` to keep a specific person
+    /// consistent across Seedance shots -- works around ByteDance's single-face-block.
+    CharacterSheet {
+        /// Input photo of the subject (path or URL)
+        input: String,
+        /// Output PNG path (default: ~/Documents/seedance/character-sheet-<hash>.png)
+        #[arg(short = 'o', long)]
+        output: Option<std::path::PathBuf>,
+        /// Extra styling hints to append to the grid prompt
+        /// (e.g. "wearing a white hoodie", "studio three-point lighting")
+        #[arg(long)]
+        style: Option<String>,
+        /// Grid size (9-angle 3x3 or 4-angle 2x2)
+        #[arg(long, default_value_t = 9)]
+        angles: u8,
+    },
+
+    /// Wrap an audio file inside a silent mp4 so it can be fed as a `--video` reference.
+    /// Workaround for Seedance 2.0's "reference audio mutates lyrics" quirk
+    /// (credit: @simeonnz via @MrDavids1). Uses ffmpeg under the hood.
+    AudioToVideo {
+        /// Input audio file (wav/mp3/m4a/etc)
+        input: std::path::PathBuf,
+        /// Output mp4 path (default: <input>.silent.mp4)
+        #[arg(short = 'o', long)]
+        output: Option<std::path::PathBuf>,
+        /// Background color: "black" or "white" (default: black)
+        #[arg(long, default_value = "black")]
+        background: String,
+        /// Output resolution: 480 | 720 (default: 480 — smallest viable)
+        #[arg(long, default_value_t = 480)]
+        height: u32,
     },
 
     /// List available Seedance model ids

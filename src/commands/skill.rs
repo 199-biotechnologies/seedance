@@ -13,7 +13,9 @@ description: >
   Generate video with ByteDance Seedance 2.0 from the terminal. Supports text-to-video,
   image-to-video (first / first+last / up to 9 reference images), reference videos,
   reference audio, and multimodal mixes. Run `{name} agent-info` for the full capability
-  manifest, flags, and exit codes. Run `{name} doctor` before first use.
+  manifest, flags, and exit codes. Run `{name} doctor` before first use. For prompt-writing
+  guidance, decision trees, and use-case templates (UGC / marketing / cinematic), also
+  install the companion `seedance-prompting` skill.
 ---
 
 ## {name}
@@ -23,26 +25,51 @@ run `{name} agent-info` for the machine-readable schema.
 
 Fast path:
   {name} doctor
-  {name} generate --prompt "A cat yawns at the camera" --wait --output cat.mp4
+  {name} generate --prompt "A cat yawns at the camera" --wait
 
 Key flags for `generate`:
-  --prompt / -p           Text prompt (supports [Image N], [Video N], [Audio N], [0-4s])
+  --prompt / -p           Text prompt (supports [Image N], [Video N], [Audio N], time codes)
   --image / -i            Reference image (repeatable, max 9; path or URL)
   --first-frame           First frame image (mode switch)
   --last-frame            Last frame image (requires --first-frame)
   --video / -v            Reference video URL (repeatable, max 3, URLs only)
-  --audio / -a            Reference audio (repeatable, max 3; needs an image or video alongside)
+  --audio / -a            Reference audio (repeatable, max 3; needs image or video alongside)
   --duration / -d         Seconds [4,15] or -1 for auto
   --resolution / -r       480p | 720p (2.0 has no 1080p)
   --ratio                 16:9 | 4:3 | 1:1 | 3:4 | 9:16 | 21:9 | adaptive
   --fast                  Use Seedance 2.0 Fast
-  --wait / --output       Block until done, download the mp4
+  --wait / --output       Block until done, download mp4 to ~/Documents/seedance/ by default
 
-Polling after an async generate:
+Companion subcommands:
+  {name} character-sheet <photo>   9-angle reference grid (bypasses single-face block)
+                                   Requires: nanaban (npm i -g nanaban)
+  {name} audio-to-video <audio>    Wrap audio in silent mp4 (preserves exact lyrics / music)
+                                   Requires: ffmpeg (brew install ffmpeg)
+
+Async flow:
   {name} status <id>
   {name} download <id> --output out.mp4
+  {name} cancel <id>
 
-Auth: `SEEDANCE_API_KEY` or `ARK_API_KEY` env var. Get a key at https://console.byteplus.com/ark.
+Setup + auth:
+  {name} config set api-key ark-xxxxxxxx   # stored chmod 600, masked in `config show`
+  # or: export SEEDANCE_API_KEY / ARK_API_KEY
+  # get a key: https://console.byteplus.com/ark
+
+Agent workflow for consistent person across shots:
+  1. {name} character-sheet ./subject.jpg -o sheet.png
+  2. {name} generate --image sheet.png \
+       --prompt "[Image 1] is a 9-panel reference sheet of the subject; refer to [Image 1] \
+                 and select the matching angle for each shot. ..." --wait
+
+Agent workflow for exact music / dialogue:
+  1. {name} audio-to-video song.mp3 -o song.silent.mp4
+  2. host song.silent.mp4 publicly (S3 / catbox.moe / signed URL)
+  3. {name} generate --video <url> --image subject.png \
+       --prompt "Use [Video 1] as the soundtrack throughout. ..." --wait
+
+For deeper prompt-writing (UGC vs marketing vs cinematic templates, platform-specific tips,
+decision trees for character consistency, word budgets), see the `seedance-prompting` skill.
 "#
     )
 }

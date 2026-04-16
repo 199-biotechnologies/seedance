@@ -1,5 +1,7 @@
 pub mod agent_info;
+pub mod audio_to_video;
 pub mod cancel;
+pub mod character_sheet;
 pub mod config;
 pub mod doctor;
 pub mod download;
