@@ -28,7 +28,9 @@ pub struct Cli {
 const HELP_FOOTER: &str = "\
 Tips:
   * Run `seedance agent-info | jq` for the full capability manifest
-  * Get an API key from https://console.byteplus.com/ark (set ARK_API_KEY or SEEDANCE_API_KEY)
+  * Get an API key from https://console.byteplus.com/ark, then save it with:
+      seedance config set api-key ark-xxxxxxxx (stored at chmod 600, never echoed)
+    or export SEEDANCE_API_KEY / ARK_API_KEY
   * Reference files: images and audio can be local paths (base64-encoded inline) OR URLs
   * Videos must be URLs -- the API does not accept base64 for video
   * Audio alone is not allowed -- Seedance requires at least one image or video alongside audio
@@ -288,4 +290,38 @@ pub enum ConfigAction {
     Show,
     /// Print configuration file path
     Path,
+    /// Write a value into the TOML config file (api-key, base-url, model)
+    Set {
+        /// Which setting to update
+        #[arg(value_enum)]
+        key: ConfigKey,
+        /// New value
+        value: String,
+    },
+    /// Remove a value from the TOML config file
+    Unset {
+        #[arg(value_enum)]
+        key: ConfigKey,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum, Debug)]
+#[value(rename_all = "kebab-case")]
+pub enum ConfigKey {
+    /// BytePlus ModelArk API key (stored locally, never echoed in `config show`)
+    ApiKey,
+    /// API base URL (override if BytePlus publishes a new region)
+    BaseUrl,
+    /// Default model id
+    Model,
+}
+
+impl ConfigKey {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ApiKey => "api_key",
+            Self::BaseUrl => "base_url",
+            Self::Model => "model",
+        }
+    }
 }

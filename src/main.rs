@@ -78,6 +78,8 @@ fn main() {
                 config::load().and_then(|cfg| commands::config::show(ctx, &cfg))
             }
             ConfigAction::Path => commands::config::path(ctx),
+            ConfigAction::Set { key, value } => commands::config::set(ctx, key, value),
+            ConfigAction::Unset { key } => commands::config::unset(ctx, key),
         },
         Commands::Update { check } => {
             config::load().and_then(|cfg| commands::update::run(ctx, check, &cfg))

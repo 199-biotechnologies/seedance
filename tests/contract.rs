@@ -14,6 +14,20 @@ fn bin() -> Command {
     Command::cargo_bin("seedance").unwrap()
 }
 
+/// Return a Command isolated from the user's real config file. Prevents
+/// tests from picking up an API key set via `seedance config set`.
+fn isolated_bin(tmp: &tempfile::TempDir) -> Command {
+    let mut c = bin();
+    // `directories` resolves ~/Library/Application Support on macOS and
+    // ~/.config on Linux from HOME. Point HOME at an empty tmp dir so no
+    // real config is found.
+    c.env("HOME", tmp.path());
+    c.env("XDG_CONFIG_HOME", tmp.path());
+    c.env_remove("SEEDANCE_API_KEY");
+    c.env_remove("ARK_API_KEY");
+    c
+}
+
 #[test]
 fn agent_info_is_valid_json() {
     let output = bin().arg("agent-info").output().unwrap();
@@ -159,11 +173,9 @@ fn generate_video_local_path_rejected() {
 
 #[test]
 fn missing_api_key_is_config_error() {
-    // We ensure the env is cleared so the config error path triggers.
-    let output = bin()
+    let tmp = tempfile::tempdir().unwrap();
+    let output = isolated_bin(&tmp)
         .args(["generate", "--prompt", "hi"])
-        .env_remove("SEEDANCE_API_KEY")
-        .env_remove("ARK_API_KEY")
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
@@ -274,18 +286,51 @@ fn config_path_shape() {
 
 #[test]
 fn doctor_fails_when_no_api_key() {
-    let output = bin()
-        .arg("doctor")
-        .env_remove("SEEDANCE_API_KEY")
-        .env_remove("ARK_API_KEY")
-        .output()
-        .unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let output = isolated_bin(&tmp).arg("doctor").output().unwrap();
     // doctor exits 2 if any check fails
     assert_eq!(output.status.code(), Some(2));
     // Structured report still goes to stdout before the error
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("\"name\": \"api_key\""));
     assert!(stdout.contains("\"status\": \"fail\""));
+}
+
+#[test]
+fn config_set_api_key_round_trips() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    // Set
+    let out = isolated_bin(&tmp)
+        .args(["config", "set", "api-key", "ark-testkey-12345678"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "config set failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["data"]["key"], "api_key");
+    assert_eq!(v["data"]["action"], "set");
+    assert!(v["data"]["value_display"]
+        .as_str()
+        .unwrap()
+        .starts_with("ark-"));
+
+    // Show should now see it -- still masked
+    let out = isolated_bin(&tmp).args(["config", "show"]).output().unwrap();
+    assert!(out.status.success());
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(v["data"]["api_key"].is_string());
+    assert!(!v["data"]["api_key"].as_str().unwrap().contains("testkey"));
+
+    // Unset clears it
+    let out = isolated_bin(&tmp)
+        .args(["config", "unset", "api-key"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
 }
 
 // Sanity check: predicate-based assertion for the no-input case.

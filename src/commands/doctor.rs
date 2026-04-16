@@ -35,6 +35,26 @@ struct DoctorReport {
     summary: DoctorSummary,
 }
 
+fn is_not_found(code: &str) -> bool {
+    let lower = code.to_ascii_lowercase();
+    code == "404"
+        || lower.contains("notfound")
+        || lower.contains("not_found")
+        || lower.contains("resource_not_found")
+        || lower.contains("resourcenotfound")
+}
+
+fn is_auth_failure(code: &str) -> bool {
+    let lower = code.to_ascii_lowercase();
+    matches!(code, "401" | "403")
+        || lower.contains("unauthorized")
+        || lower.contains("forbidden")
+        || lower.contains("authfail")
+        || lower.contains("auth_fail")
+        || lower.contains("invalidapikey")
+        || lower.contains("invalid_api_key")
+}
+
 pub fn run(ctx: Ctx, cfg: &AppConfig) -> Result<(), AppError> {
     let mut checks: Vec<DoctorCheck> = Vec::new();
 
@@ -82,8 +102,8 @@ pub fn run(ctx: Ctx, cfg: &AppConfig) -> Result<(), AppError> {
     // Base URL reachability (only if we have a key, to avoid a pointless 401)
     if let Some(key) = resolved.as_deref() {
         let ping = ApiClient::new(&cfg.base_url, key).and_then(|c| {
-            // Call GET on a clearly non-existent task id: 404 is fine -- it proves
-            // the API is reachable and auth is valid.
+            // Call GET on a clearly non-existent task id: any "not found" response
+            // proves the API is reachable and auth is valid.
             c.get_task("cgt-seedance-cli-doctor-ping")
         });
         checks.push(match ping {
@@ -93,15 +113,13 @@ pub fn run(ctx: Ctx, cfg: &AppConfig) -> Result<(), AppError> {
                 message: format!("{} reachable", cfg.base_url),
                 suggestion: None,
             },
-            Err(AppError::Api { code, .. }) if code.starts_with("404") || code == "404" => {
-                DoctorCheck {
-                    name: "base_url",
-                    status: CheckStatus::Pass,
-                    message: format!("{} reachable (auth OK)", cfg.base_url),
-                    suggestion: None,
-                }
-            }
-            Err(AppError::Api { code, message }) if code == "401" || code == "403" => DoctorCheck {
+            Err(AppError::Api { code, .. }) if is_not_found(&code) => DoctorCheck {
+                name: "base_url",
+                status: CheckStatus::Pass,
+                message: format!("{} reachable (auth OK)", cfg.base_url),
+                suggestion: None,
+            },
+            Err(AppError::Api { code, message }) if is_auth_failure(&code) => DoctorCheck {
                 name: "base_url",
                 status: CheckStatus::Fail,
                 message: format!("auth rejected: {code} {message}"),

@@ -80,8 +80,23 @@ pub fn run() {
             },
             "skill install": {"description": "Install skill file to agent platforms", "args": [], "options": []},
             "skill status":  {"description": "Check skill installation status",        "args": [], "options": []},
-            "config show":   {"description": "Display effective merged configuration",  "args": [], "options": []},
+            "config show":   {"description": "Display effective merged configuration (api_key masked)", "args": [], "options": []},
             "config path":   {"description": "Show configuration file path",            "args": [], "options": []},
+            "config set":    {
+                "description": "Persist a setting in the config file (chmod 600)",
+                "args": [
+                    {"name": "key",   "kind": "positional", "type": "string", "required": true, "values": ["api-key","base-url","model"]},
+                    {"name": "value", "kind": "positional", "type": "string", "required": true}
+                ],
+                "options": []
+            },
+            "config unset":  {
+                "description": "Remove a setting from the config file",
+                "args": [
+                    {"name": "key", "kind": "positional", "type": "string", "required": true, "values": ["api-key","base-url","model"]}
+                ],
+                "options": []
+            },
             "update": {
                 "description": "Self-update binary from GitHub Releases",
                 "args": [],
