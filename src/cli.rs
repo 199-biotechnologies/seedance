@@ -175,6 +175,7 @@ pub enum Commands {
     /// Wrap an audio file inside a silent mp4 so it can be fed as a `--video` reference.
     /// Workaround for Seedance 2.0's "reference audio mutates lyrics" quirk
     /// (credit: @simeonnz via @MrDavids1). Uses ffmpeg under the hood.
+    /// Output is hard-capped at 14.5s (BytePlus rejects >15.2s reference videos).
     AudioToVideo {
         /// Input audio file (wav/mp3/m4a/etc)
         input: std::path::PathBuf,
@@ -187,6 +188,38 @@ pub enum Commands {
         /// Output resolution: 480 | 720 (default: 480 — smallest viable)
         #[arg(long, default_value_t = 480)]
         height: u32,
+        /// After wrapping, upload to tmpfiles.org and print the hosted URL
+        /// (ready to paste into `--video`). tmpfiles.org is confirmed reachable
+        /// by the BytePlus fetcher; catbox.moe is blocklisted.
+        #[arg(long)]
+        upload: bool,
+    },
+
+    /// Apply the empirical face-filter-bypass recipe to a portrait so it can be
+    /// used as `--first-frame` without tripping BytePlus's real-face detector.
+    /// Default recipe (heavy grain + desat) PASSES the filter while keeping
+    /// colour and identity; --bw swaps in the pure grayscale variant that also
+    /// passes. Uses ImageMagick. Discovered empirically 2026-04-16.
+    PrepFace {
+        /// Input portrait (path or URL)
+        input: std::path::PathBuf,
+        /// Output PNG (default: ~/Documents/seedance/prep-face-<hash>.png)
+        #[arg(short = 'o', long)]
+        output: Option<std::path::PathBuf>,
+        /// Use the pure black-and-white + grain variant instead of colour-with-grain
+        #[arg(long)]
+        bw: bool,
+        /// Output width in px (default: 512 -- the proven passing resolution)
+        #[arg(long, default_value_t = 512)]
+        width: u32,
+    },
+
+    /// Upload a local file to a public HTTPS URL via tmpfiles.org (default host)
+    /// and print the direct-download URL ready to pass to `--video` / `--image`.
+    /// tmpfiles.org is BytePlus-fetcher-compatible; catbox.moe is blocklisted.
+    Upload {
+        /// Local file to upload
+        input: std::path::PathBuf,
     },
 
     /// List available Seedance model ids

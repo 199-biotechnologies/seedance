@@ -7,6 +7,8 @@ pub mod doctor;
 pub mod download;
 pub mod generate;
 pub mod models;
+pub mod prep_face;
 pub mod skill;
 pub mod status;
 pub mod update;
+pub mod upload;

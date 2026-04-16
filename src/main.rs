@@ -72,7 +72,15 @@ fn main() {
             output,
             background,
             height,
-        } => commands::audio_to_video::run(ctx, input, output, background, height),
+            upload,
+        } => commands::audio_to_video::run(ctx, input, output, background, height, upload),
+        Commands::PrepFace {
+            input,
+            output,
+            bw,
+            width,
+        } => commands::prep_face::run(ctx, input, output, bw, width),
+        Commands::Upload { input } => commands::upload::run(ctx, input),
         Commands::Models => commands::models::run(ctx),
         Commands::Doctor => {
             config::load().and_then(|cfg| commands::doctor::run(ctx, &cfg))

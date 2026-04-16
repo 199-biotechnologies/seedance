@@ -1,6 +1,6 @@
 [package]
 name = "seedance"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 rust-version = "1.85"
 description = "Generate video with ByteDance Seedance 2.0 from the terminal. Agent-friendly."
@@ -26,7 +26,7 @@ figment = { version = "0.10", features = ["toml", "env"] }
 toml_edit = "0.23"
 directories = "6"
 which = "7"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls", "stream", "multipart"] }
 base64 = "0.22"
 mime_guess = "2"
 indicatif = "0.17"
