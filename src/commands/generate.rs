@@ -1,5 +1,7 @@
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Serialize;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -65,6 +67,15 @@ pub fn run(ctx: Ctx, args: GenerateArgs) -> Result<(), AppError> {
         safety_identifier: args.safety_identifier.clone(),
     };
 
+    // Duplicate-guard: hash the request and reject identical retries within 10 minutes.
+    // Requests with seed=-1 (random) are skipped because each call intentionally
+    // produces something new. Pass --force to override.
+    let _guard = if request.seed != Some(-1) {
+        Some(DuplicateGuard::acquire(&request, args.force)?)
+    } else {
+        None
+    };
+
     let api = ApiClient::new(&cfg.base_url, &api_key)?;
     output::info(ctx, &format!("creating task ({model})"));
     let created = api.create_task(&request)?;
@@ -116,9 +127,8 @@ pub fn run(ctx: Ctx, args: GenerateArgs) -> Result<(), AppError> {
         .map(|s| s.to_string())
         .ok_or_else(|| AppError::Transient("task succeeded but returned no video_url".into()))?;
 
-    // --wait alone (no explicit --output) still writes the file -- default to
-    // ~/Documents/seedance/<id>.mp4 so generations always land somewhere
-    // predictable instead of scattering across whichever directory invoked us.
+    // Always write the mp4 somewhere predictable -- ~/Documents/seedance/<id>.mp4
+    // unless the user pointed elsewhere with --output.
     let out_path = args
         .output
         .clone()
@@ -177,13 +187,13 @@ fn validate(args: &GenerateArgs) -> Result<(), AppError> {
     }
     if args.videos.len() > 3 {
         return Err(AppError::InvalidInput(format!(
-            "too many reference videos: {}. Max 3 (and total duration <=15s).",
+            "too many reference videos: {}. Max 3 (and total duration <=15s, server-enforced).",
             args.videos.len()
         )));
     }
     if args.audio.len() > 3 {
         return Err(AppError::InvalidInput(format!(
-            "too many reference audio clips: {}. Max 3 (and total duration <=15s).",
+            "too many reference audio clips: {}. Max 3 (and total duration <=15s, server-enforced).",
             args.audio.len()
         )));
     }
@@ -284,7 +294,6 @@ fn wait_for_task(
         Some(start + Duration::from_secs(timeout))
     };
 
-    // Progress bar in human mode only.
     let bar = if matches!(ctx.format, Format::Human) && !ctx.quiet {
         let b = ProgressBar::new_spinner();
         b.set_style(
@@ -298,12 +307,24 @@ fn wait_for_task(
     };
 
     loop {
+        // Enforce deadline before each poll so --timeout is a hard cap.
+        if let Some(d) = deadline
+            && Instant::now() >= d
+        {
+            if let Some(b) = bar {
+                b.finish_and_clear();
+            }
+            return Err(AppError::Transient(format!(
+                "timed out after {timeout}s waiting for task {id}"
+            )));
+        }
+
         let task = api.get_task(id)?;
         if let Some(b) = &bar {
-            let elapsed = start.elapsed().as_secs();
             b.set_message(format!(
-                "{} ({elapsed}s) -- {}",
+                "{} ({}s) -- {}",
                 id,
+                start.elapsed().as_secs(),
                 task.status
             ));
         }
@@ -313,18 +334,17 @@ fn wait_for_task(
             }
             return Ok(task);
         }
-        if let Some(d) = deadline
-            && Instant::now() >= d
-        {
-            if let Some(b) = bar {
-                b.finish_and_clear();
-            }
-            return Err(AppError::Transient(format!(
-                "timed out after {timeout}s waiting for task {id} (last status: {})",
-                task.status
-            )));
+
+        // Sleep up to `interval`, but not past the deadline.
+        let remaining = match deadline {
+            Some(d) => d.saturating_duration_since(Instant::now()),
+            None => interval,
+        };
+        let sleep_for = interval.min(remaining);
+        if sleep_for.is_zero() {
+            continue;
         }
-        std::thread::sleep(interval);
+        std::thread::sleep(sleep_for);
     }
 }
 
@@ -337,8 +357,6 @@ fn normalize_output_path(path: PathBuf, id: &str) -> PathBuf {
 }
 
 /// Default output directory when --wait is set without --output.
-/// Resolves to ~/Documents/seedance/ so generated videos don't scatter around
-/// wherever the user happened to invoke the CLI.
 pub fn default_output_dir() -> PathBuf {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
@@ -346,3 +364,89 @@ pub fn default_output_dir() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("."));
     home.join("Documents").join("seedance")
 }
+
+// ── Duplicate guard ────────────────────────────────────────────────────────
+// Protects against accidental double-generation (agent retries, stuck shells)
+// on the paid `generate` path. Keyed by a hash of the canonical request so
+// different prompts coexist; identical deterministic requests within the
+// staleness window return exit 3 instead of spending credits twice.
+
+const DUPLICATE_WINDOW_SECS: u64 = 600; // 10 min
+
+struct DuplicateGuard {
+    path: PathBuf,
+    released: std::cell::Cell<bool>,
+}
+
+impl DuplicateGuard {
+    fn acquire(req: &CreateTaskRequest, force: bool) -> Result<Self, AppError> {
+        let dir = locks_dir();
+        std::fs::create_dir_all(&dir)?;
+        let key = fingerprint(req);
+        let path = dir.join(format!("generate-{key}.lock"));
+
+        if path.exists()
+            && !force
+            && let Ok(meta) = std::fs::metadata(&path)
+            && let Ok(modified) = meta.modified()
+            && let Ok(age) = modified.elapsed()
+            && age < Duration::from_secs(DUPLICATE_WINDOW_SECS)
+        {
+            return Err(AppError::InvalidInput(format!(
+                "duplicate generation detected (fingerprint {key}, age {}s). \
+                 Pass --force to override, or change seed/prompt.",
+                age.as_secs()
+            )));
+        }
+
+        let body = serde_json::json!({
+            "pid": std::process::id(),
+            "fingerprint": key,
+        });
+        std::fs::write(&path, body.to_string())?;
+        Ok(Self {
+            path,
+            released: std::cell::Cell::new(false),
+        })
+    }
+
+    #[allow(dead_code)]
+    fn release(&self) {
+        if !self.released.replace(true) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+impl Drop for DuplicateGuard {
+    fn drop(&mut self) {
+        if !self.released.replace(true) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+fn locks_dir() -> PathBuf {
+    directories::ProjectDirs::from("", "", env!("CARGO_PKG_NAME"))
+        .map(|d| d.data_local_dir().to_path_buf())
+        .unwrap_or_else(|| {
+            let home = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("."));
+            home.join(".local/share").join(env!("CARGO_PKG_NAME"))
+        })
+        .join("locks")
+}
+
+fn fingerprint(req: &CreateTaskRequest) -> String {
+    // Canonicalise the request to a JSON string and hash it. This keeps the
+    // key stable within a binary install (which is all we need for lock files).
+    // Using serde_json::to_string (not to_string_pretty) keeps formatting
+    // deterministic.
+    let canonical = serde_json::to_string(req).unwrap_or_default();
+    let mut h = DefaultHasher::new();
+    canonical.hash(&mut h);
+    format!("{:016x}", h.finish())
+}
+

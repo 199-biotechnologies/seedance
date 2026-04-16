@@ -274,6 +274,11 @@ pub struct GenerateArgs {
     /// API key override (else SEEDANCE_API_KEY / ARK_API_KEY / config)
     #[arg(long, env = "SEEDANCE_API_KEY", hide_env_values = true)]
     pub api_key: Option<String>,
+
+    /// Override the duplicate-generation guard. Without this, identical deterministic
+    /// requests fired within 10 minutes are rejected so agent retries don't double-spend.
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Subcommand)]
