@@ -1,0 +1,14 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Editor / local agent scratch
+.claude/
+.codex/
+.gemini/
+.idea/
+.vscode/

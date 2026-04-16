@@ -1,0 +1,127 @@
+/// Machine-readable capability manifest.
+pub fn run() {
+    let name = env!("CARGO_PKG_NAME");
+    let config_path = crate::config::config_path();
+
+    let info = serde_json::json!({
+        "name": name,
+        "version": env!("CARGO_PKG_VERSION"),
+        "description": env!("CARGO_PKG_DESCRIPTION"),
+        "commands": {
+            "generate": {
+                "description": "Create a video generation task with Seedance 2.0 (alias: gen)",
+                "aliases": ["gen"],
+                "args": [],
+                "options": [
+                    {"name": "--prompt",            "short": "-p", "type": "string", "required": false, "description": "Text prompt (supports [Image N], [Video N], [Audio N], time codes like [0-4s])"},
+                    {"name": "--image",             "short": "-i", "type": "string", "required": false, "multiple": true, "description": "Reference image path or URL (repeatable, max 9; role=reference_image)"},
+                    {"name": "--first-frame",                      "type": "string", "required": false, "description": "Image used as first frame (role=first_frame)"},
+                    {"name": "--last-frame",                       "type": "string", "required": false, "description": "Image used as last frame (role=last_frame, requires --first-frame)"},
+                    {"name": "--video",             "short": "-v", "type": "string", "required": false, "multiple": true, "description": "Reference video URL (repeatable, max 3, local paths not supported)"},
+                    {"name": "--audio",             "short": "-a", "type": "string", "required": false, "multiple": true, "description": "Reference audio path or URL (wav/mp3, repeatable, max 3; requires at least one image or video)"},
+                    {"name": "--duration",          "short": "-d", "type": "integer", "required": false, "default": 5, "description": "Seconds [4,15] or -1 for auto"},
+                    {"name": "--resolution",        "short": "-r", "type": "string", "required": false, "default": "720p", "values": ["480p", "720p"], "description": "Output resolution (Seedance 2.0 has no 1080p)"},
+                    {"name": "--ratio",                            "type": "string", "required": false, "default": "adaptive", "values": ["16:9","4:3","1:1","3:4","9:16","21:9","adaptive"], "description": "Aspect ratio"},
+                    {"name": "--seed",                             "type": "integer", "required": false, "default": -1, "description": "Seed; -1 = random"},
+                    {"name": "--audio-sync",                       "type": "bool", "required": false, "default": true, "description": "Generate synchronized audio"},
+                    {"name": "--no-audio-sync",                    "type": "bool", "required": false, "default": false, "description": "Output silent video"},
+                    {"name": "--watermark",                        "type": "bool", "required": false, "default": false, "description": "Add ModelArk watermark"},
+                    {"name": "--fast",                             "type": "bool", "required": false, "default": false, "description": "Use Seedance 2.0 Fast"},
+                    {"name": "--model",                            "type": "string", "required": false, "description": "Override model id"},
+                    {"name": "--callback-url",                     "type": "string", "required": false, "description": "Webhook to notify on status change"},
+                    {"name": "--safety-identifier",                "type": "string", "required": false, "description": "Hashed end-user id (<=64 ASCII chars)"},
+                    {"name": "--wait",              "short": "-w", "type": "bool", "required": false, "description": "Block until the task finishes"},
+                    {"name": "--output",            "short": "-o", "type": "path", "required": false, "description": "Output file path (implies --wait)"},
+                    {"name": "--poll-interval",                    "type": "integer", "required": false, "default": 5, "description": "Seconds between polls while waiting"},
+                    {"name": "--timeout",                          "type": "integer", "required": false, "default": 900, "description": "Max wait seconds (0 = unlimited)"},
+                    {"name": "--api-key",                          "type": "string", "required": false, "description": "API key override (else SEEDANCE_API_KEY / ARK_API_KEY / config)"}
+                ]
+            },
+            "status": {
+                "description": "Retrieve a video generation task (alias: get)",
+                "aliases": ["get"],
+                "args": [{"name": "id", "kind": "positional", "type": "string", "required": true}],
+                "options": [
+                    {"name": "--api-key", "type": "string", "required": false}
+                ]
+            },
+            "download": {
+                "description": "Download the video for a completed task",
+                "args": [{"name": "id", "kind": "positional", "type": "string", "required": true}],
+                "options": [
+                    {"name": "--output", "short": "-o", "type": "path", "required": false, "description": "Output file path (default: <id>.mp4)"},
+                    {"name": "--api-key", "type": "string", "required": false}
+                ]
+            },
+            "cancel": {
+                "description": "Cancel a queued task (alias: rm)",
+                "aliases": ["rm"],
+                "args": [{"name": "id", "kind": "positional", "type": "string", "required": true}],
+                "options": [
+                    {"name": "--api-key", "type": "string", "required": false}
+                ]
+            },
+            "models": {
+                "description": "List available Seedance model ids (alias: ls)",
+                "aliases": ["ls"],
+                "args": [],
+                "options": []
+            },
+            "doctor": {
+                "description": "Check API key, base URL, and dependency health",
+                "args": [],
+                "options": []
+            },
+            "agent-info": {
+                "description": "This manifest",
+                "aliases": ["info"],
+                "args": [],
+                "options": []
+            },
+            "skill install": {"description": "Install skill file to agent platforms", "args": [], "options": []},
+            "skill status":  {"description": "Check skill installation status",        "args": [], "options": []},
+            "config show":   {"description": "Display effective merged configuration",  "args": [], "options": []},
+            "config path":   {"description": "Show configuration file path",            "args": [], "options": []},
+            "update": {
+                "description": "Self-update binary from GitHub Releases",
+                "args": [],
+                "options": [{"name": "--check", "type": "bool", "required": false, "default": false}]
+            }
+        },
+        "global_flags": {
+            "--json":  {"description": "Force JSON output (auto-enabled when piped)", "type": "bool", "default": false},
+            "--quiet": {"description": "Suppress informational output",               "type": "bool", "default": false}
+        },
+        "exit_codes": {
+            "0": "Success",
+            "1": "Transient error (IO, network, API) -- retry",
+            "2": "Config error -- fix setup",
+            "3": "Bad input -- fix arguments",
+            "4": "Rate limited -- wait and retry"
+        },
+        "envelope": {
+            "version": "1",
+            "success": "{ version, status, data }",
+            "error": "{ version, status, error: { code, message, suggestion } }"
+        },
+        "config": {
+            "path": config_path.display().to_string(),
+            "env_prefix": "SEEDANCE_",
+            "fallback_env_keys": ["SEEDANCE_API_KEY", "ARK_API_KEY"]
+        },
+        "api": {
+            "provider": "BytePlus ModelArk",
+            "base_url_default": crate::config::DEFAULT_BASE_URL,
+            "default_model": crate::config::DEFAULT_MODEL,
+            "fast_model": crate::config::DEFAULT_MODEL_FAST,
+            "reference_limits": {
+                "images": "0-9",
+                "videos": "0-3 URLs, total <=15s, local paths not supported by API",
+                "audio": "0-3 (wav/mp3), total <=15s, must accompany at least one image or video"
+            },
+            "prompt_syntax": "Use [Image 1]..[Image N], [Video 1]..[Video 3], [Audio 1]..[Audio 3], and time codes like `[0-4s]: ...`"
+        },
+        "auto_json_when_piped": true
+    });
+    println!("{}", serde_json::to_string_pretty(&info).unwrap());
+}
