@@ -2,7 +2,7 @@
 
 **Generate video with ByteDance Seedance 2.0 from the terminal.** Agent-friendly CLI -- JSON envelope on pipe, human-readable on TTY, semantic exit codes, one binary, no MCP.
 
-Built with the [agent-cli-framework](https://github.com/199-biotechnologies/agent-cli-framework).
+Built with the [agent-cli-framework](https://github.com/paperfoot/agent-cli-framework).
 
 ## Install
 

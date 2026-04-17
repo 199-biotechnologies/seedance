@@ -34,7 +34,7 @@ pub fn run(
     }
     if which::which("nanaban").is_err() {
         return Err(AppError::Config(
-            "nanaban is not on PATH. Install it with: npm i -g nanaban (or see https://github.com/199-biotechnologies/nanaban)".into(),
+            "nanaban is not on PATH. Install it with: npm i -g nanaban (or see https://github.com/paperfoot/nanaban-cli)".into(),
         ));
     }
 

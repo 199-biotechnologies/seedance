@@ -164,7 +164,7 @@ pub fn run(ctx: Ctx, cfg: &AppConfig) -> Result<(), AppError> {
     // Companion tools -- not hard requirements, but unlock feature subcommands.
     checks.push(companion_check(
         "nanaban",
-        "npm i -g nanaban (or see https://github.com/199-biotechnologies/nanaban)",
+        "npm i -g nanaban (or see https://github.com/paperfoot/nanaban-cli)",
         "unlocks `seedance character-sheet` for consistent-person generations",
     ));
     checks.push(companion_check(

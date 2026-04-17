@@ -191,7 +191,7 @@ pub fn run() {
             "nanaban": {
                 "purpose": "Image generation. Used by `seedance character-sheet` to render a 9-angle reference grid (Nano Banana Pro / Gemini 3 Pro image).",
                 "install": "npm i -g nanaban",
-                "repo": "https://github.com/199-biotechnologies/nanaban",
+                "repo": "https://github.com/paperfoot/nanaban-cli",
                 "required_for": ["character-sheet"]
             },
             "ffmpeg": {
