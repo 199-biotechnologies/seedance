@@ -67,12 +67,9 @@ pub fn resolve(reference: &str, kind: Kind) -> Result<String, AppError> {
              Upload the mp4/mov to a CDN or pre-signed URL first."
         ))),
         Kind::Image => encode_to_data_url(path, IMAGE_MAX_BYTES, "image", None),
-        Kind::Audio => encode_to_data_url(
-            path,
-            AUDIO_MAX_BYTES,
-            "audio",
-            Some(AUDIO_ALLOWED_SUBTYPES),
-        ),
+        Kind::Audio => {
+            encode_to_data_url(path, AUDIO_MAX_BYTES, "audio", Some(AUDIO_ALLOWED_SUBTYPES))
+        }
     }
 }
 
@@ -93,7 +90,9 @@ fn validate_data_url(reference: &str, kind: &Kind) -> Result<String, AppError> {
         .unwrap_or("")
         .trim()
         .to_ascii_lowercase();
-    let is_base64 = parts.iter().any(|p| p.trim().eq_ignore_ascii_case("base64"));
+    let is_base64 = parts
+        .iter()
+        .any(|p| p.trim().eq_ignore_ascii_case("base64"));
 
     if mime.is_empty() {
         return Err(AppError::InvalidInput(format!(

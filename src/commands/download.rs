@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use crate::api::ApiClient;
 use crate::config;
 use crate::error::AppError;
+use crate::manifest::{self, Manifest, References};
 use crate::output::{self, Ctx};
 
 #[derive(Serialize)]
@@ -12,6 +13,8 @@ struct DownloadResult {
     path: String,
     bytes: u64,
     video_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    manifest: Option<String>,
 }
 
 pub fn run(
@@ -44,16 +47,55 @@ pub fn run(
     output::info(ctx, &format!("downloading to {}", path.display()));
     let bytes = api.download_video(&video_url, &path)?;
 
+    // Reconstruct a manifest from whatever the API echoed back. We won't have
+    // the original prompt here (the API doesn't return the request payload),
+    // so `prompt` is left None. The manifest is still useful as a trail:
+    // task id, model, resolution, seed, duration, timestamps.
+    let last_frame_url = task.content.as_ref().and_then(|c| c.last_frame_url.clone());
+    let m = Manifest {
+        schema: "seedance.v1",
+        task_id: task.id.clone(),
+        model: task.model.clone().unwrap_or_default(),
+        status: task.status.clone(),
+        created_at: task
+            .created_at
+            .map(manifest::iso8601_from_epoch_secs)
+            .unwrap_or_else(manifest::iso8601_now),
+        label: None,
+        project: None,
+        prompt: None,
+        resolution: task.resolution.clone(),
+        ratio: task.ratio.clone(),
+        duration: task.duration,
+        seed: task.seed,
+        generate_audio: task.generate_audio,
+        references: References::default(),
+        video_url: Some(video_url.clone()),
+        last_frame_url,
+        downloaded_to: path.display().to_string(),
+    };
+    let manifest_path = match manifest::write(&path, &m) {
+        Ok(p) => Some(p.display().to_string()),
+        Err(e) => {
+            output::info(ctx, &format!("warning: manifest write failed: {e}"));
+            None
+        }
+    };
+
     let result = DownloadResult {
         id,
         path: path.display().to_string(),
         bytes,
         video_url,
+        manifest: manifest_path,
     };
     output::print_success_or(ctx, &result, |r| {
         use owo_colors::OwoColorize;
         println!("{} {}", "saved:".bold(), r.path.green());
         println!("bytes: {}", r.bytes);
+        if let Some(m) = &r.manifest {
+            println!("meta:  {}", m.dimmed());
+        }
     });
     Ok(())
 }

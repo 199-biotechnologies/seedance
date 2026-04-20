@@ -110,10 +110,7 @@ fn generate_with_out_of_range_duration_fails() {
     assert_eq!(output.status.code(), Some(3));
     let v: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(v["error"]["code"], "invalid_input");
-    assert!(v["error"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("duration"));
+    assert!(v["error"]["message"].as_str().unwrap().contains("duration"));
 }
 
 #[test]
@@ -130,10 +127,12 @@ fn generate_audio_only_references_rejected() {
         .unwrap();
     assert_eq!(output.status.code(), Some(3));
     let v: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert!(v["error"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("audio cannot be the only reference"));
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("audio cannot be the only reference")
+    );
 }
 
 #[test]
@@ -146,10 +145,12 @@ fn generate_too_many_images_rejected() {
     let output = c.output().unwrap();
     assert_eq!(output.status.code(), Some(3));
     let v: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert!(v["error"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("too many reference images"));
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("too many reference images")
+    );
 }
 
 #[test]
@@ -165,10 +166,12 @@ fn generate_video_local_path_rejected() {
         .unwrap();
     assert_eq!(output.status.code(), Some(3));
     let v: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert!(v["error"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("video input requires a public URL"));
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("video input requires a public URL")
+    );
 }
 
 #[test]
@@ -181,10 +184,7 @@ fn missing_api_key_is_config_error() {
     assert_eq!(output.status.code(), Some(2));
     let v: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(v["error"]["code"], "config_error");
-    assert!(v["error"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("API key"));
+    assert!(v["error"]["message"].as_str().unwrap().contains("API key"));
 }
 
 #[test]
@@ -313,13 +313,18 @@ fn config_set_api_key_round_trips() {
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["data"]["key"], "api_key");
     assert_eq!(v["data"]["action"], "set");
-    assert!(v["data"]["value_display"]
-        .as_str()
-        .unwrap()
-        .starts_with("ark-"));
+    assert!(
+        v["data"]["value_display"]
+            .as_str()
+            .unwrap()
+            .starts_with("ark-")
+    );
 
     // Show should now see it -- still masked
-    let out = isolated_bin(&tmp).args(["config", "show"]).output().unwrap();
+    let out = isolated_bin(&tmp)
+        .args(["config", "show"])
+        .output()
+        .unwrap();
     assert!(out.status.success());
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(v["data"]["api_key"].is_string());
@@ -336,14 +341,8 @@ fn config_set_api_key_round_trips() {
 // Sanity check: predicate-based assertion for the no-input case.
 #[test]
 fn no_input_error_contains_helpful_message() {
-    bin()
-        .arg("generate")
-        .assert()
-        .failure()
-        .code(3)
-        .stderr(
-            predicate::str::contains("provide at least --prompt").or(predicate::str::contains(
-                "provide at least",
-            )),
-        );
+    bin().arg("generate").assert().failure().code(3).stderr(
+        predicate::str::contains("provide at least --prompt")
+            .or(predicate::str::contains("provide at least")),
+    );
 }

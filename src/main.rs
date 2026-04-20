@@ -12,6 +12,7 @@ mod cli;
 mod commands;
 mod config;
 mod error;
+mod manifest;
 mod media;
 mod output;
 
@@ -32,8 +33,7 @@ fn main() {
         Err(e) => {
             if matches!(
                 e.kind(),
-                clap::error::ErrorKind::DisplayHelp
-                    | clap::error::ErrorKind::DisplayVersion
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
             ) {
                 let format = Format::detect(json_flag);
                 match format {
@@ -66,7 +66,9 @@ fn main() {
             output,
             style,
             angles,
-        } => commands::character_sheet::run(ctx, input, output, style, angles),
+            character,
+            project,
+        } => commands::character_sheet::run(ctx, input, output, style, angles, character, project),
         Commands::AudioToVideo {
             input,
             output,
@@ -82,9 +84,7 @@ fn main() {
         } => commands::prep_face::run(ctx, input, output, bw, width),
         Commands::Upload { input } => commands::upload::run(ctx, input),
         Commands::Models => commands::models::run(ctx),
-        Commands::Doctor => {
-            config::load().and_then(|cfg| commands::doctor::run(ctx, &cfg))
-        }
+        Commands::Doctor => config::load().and_then(|cfg| commands::doctor::run(ctx, &cfg)),
         Commands::AgentInfo => {
             commands::agent_info::run();
             Ok(())
@@ -94,9 +94,7 @@ fn main() {
             SkillAction::Status => commands::skill::status(ctx),
         },
         Commands::Config { action } => match action {
-            ConfigAction::Show => {
-                config::load().and_then(|cfg| commands::config::show(ctx, &cfg))
-            }
+            ConfigAction::Show => config::load().and_then(|cfg| commands::config::show(ctx, &cfg)),
             ConfigAction::Path => commands::config::path(ctx),
             ConfigAction::Set { key, value } => commands::config::set(ctx, key, value),
             ConfigAction::Unset { key } => commands::config::unset(ctx, key),

@@ -39,16 +39,29 @@ Key flags for `generate`:
   --ratio                 16:9 | 4:3 | 1:1 | 3:4 | 9:16 | 21:9 | adaptive
   --fast                  Use Seedance 2.0 Fast
   --wait / --output       Block until done, download mp4 to ~/Documents/seedance/ by default
+  --label                 Human slug in the default filename + sidecar manifest (e.g. "cafe-opening")
+  --project               Nest output under ~/Documents/seedance/<project>/
+
+Every `--wait`ed generate writes a sidecar `<file>.seedance.json` beside the mp4
+containing the full request (prompt, refs, model, seed, duration, task id, timestamps).
+Agents: read the sidecar instead of guessing which prompt produced which file.
+Example: `for f in *.seedance.json; do jq -r '[.downloaded_to, .label, .prompt] | @tsv' "$f"; done`.
 
 Companion subcommands:
-  {name} character-sheet <photo>   9-angle reference grid (bypasses single-face block)
-                                   Requires: nanaban (npm i -g nanaban)
-  {name} audio-to-video <audio>    Wrap audio in silent mp4 (preserves exact lyrics / music)
-                                   Requires: ffmpeg (brew install ffmpeg)
+  {name} character-sheet <photo> --character NAME [--project NAME]
+                                   9-angle reference grid that keeps one person consistent.
+                                   Requires: nanaban (npm i -g nanaban).
+                                   Multi-character scenes: run once per character with
+                                   distinct --character names. Cap at 2 characters per
+                                   shot (3+ breaks identity).
+  {name} audio-to-video <audio>    Wrap audio in silent mp4 (preserves exact lyrics / music).
+                                   Requires: ffmpeg (brew install ffmpeg).
+  {name} prep-face <photo>         Heavy-grain recipe that passes ModelArk's face filter.
+                                   Requires: imagemagick.
 
 Async flow:
   {name} status <id>
-  {name} download <id> --output out.mp4
+  {name} download <id> --output out.mp4   # also writes <out>.seedance.json
   {name} cancel <id>
 
 Setup + auth:
@@ -56,20 +69,59 @@ Setup + auth:
   # or: export SEEDANCE_API_KEY / ARK_API_KEY
   # get a key: https://console.byteplus.com/ark
 
-Agent workflow for consistent person across shots:
-  1. {name} character-sheet ./subject.jpg -o sheet.png
-  2. {name} generate --image sheet.png \
-       --prompt "[Image 1] is a 9-panel reference sheet of the subject; refer to [Image 1] \
-                 and select the matching angle for each shot. ..." --wait
+Prompting principles (Seedance is prompt-sensitive, do not rely on logic):
+  * Describe every visible element explicitly. Do not say "the lighting is appropriate";
+    say "soft window light from camera-right, no ring light, slight motion blur".
+  * Give every reference an explicit job. Unnamed refs are dropped silently.
+    "[Image 1] for Alice's face and hair only, not her clothing. [Image 2] for the
+     leather jacket." beats "use these references".
+  * One verb per shot. Split multi-action shots into time-coded beats:
+    "[0-4s]: Alice walks in; [4-9s]: Alice sits; [9-15s]: Alice smiles at Bob".
+  * Negative prompts do not work. Rephrase positively. Not "no weird eyes", but
+    "eyes natural, soft eye contact with the lens, blinks occasionally".
+  * Early tokens dominate. Put camera language, subject, and style in the first half.
+  * Prompt length 30-200 words. Too short = underspecified; too long = details ignored.
+  * Plain literal language beats clever language.
 
-Agent workflow for exact music / dialogue:
-  1. {name} audio-to-video song.mp3 -o song.silent.mp4
-  2. host song.silent.mp4 publicly (S3 / catbox.moe / signed URL)
-  3. {name} generate --video <url> --image subject.png \
-       --prompt "Use [Video 1] as the soundtrack throughout. ..." --wait
+Multi-character workflow:
+  # One sheet per person, named
+  {name} character-sheet alice.jpg --character alice --project cafe
+  {name} character-sheet bob.jpg   --character bob   --project cafe
 
-For deeper prompt-writing (UGC vs marketing vs cinematic templates, platform-specific tips,
-decision trees for character consistency, word budgets), see the `seedance-prompting` skill.
+  # Both sheets as separate references, each with an explicit job
+  {name} generate --project cafe --label cafe-opening \
+    --image ~/Documents/seedance/cafe/alice-sheet.png \
+    --image ~/Documents/seedance/cafe/bob-sheet.png \
+    --prompt "[Image 1] is Alice's 9-angle reference. [Image 2] is Bob's 9-angle \
+              reference. Keep Alice's face and hair matching [Image 1] exactly; \
+              keep Bob's face and beard matching [Image 2] exactly. \
+              [0-4s]: wide shot, Alice and Bob sit across a corner table in a sunlit \
+              Parisian cafe, warm natural window light from camera-left. \
+              [4-9s]: medium shot, Alice picks up her espresso cup with her right hand. \
+              [9-14s]: close-up on Bob, he smiles gently, handheld tracking." \
+    --duration 14 --resolution 720p --ratio 16:9 --wait
+
+Output of the last command:
+  ~/Documents/seedance/cafe/20260420T023015Z-cafe-opening-abc12345.mp4
+  ~/Documents/seedance/cafe/20260420T023015Z-cafe-opening-abc12345.seedance.json
+
+Consistent-person-only workflow (no second character):
+  {name} character-sheet ./subject.jpg --character alice
+  {name} generate --image ~/Documents/seedance/alice-sheet.png --label alice-walk \
+    --prompt "[Image 1] is Alice's 9-angle reference. Her face and hair match [Image 1] \
+              exactly. Medium tracking shot, Alice walks through a sunlit Parisian \
+              cafe, handheld, warm natural window light." --duration 10 --wait
+
+Exact music / dialogue (preserves lyrics verbatim):
+  {name} audio-to-video song.mp3 --upload          # prints a public URL
+  {name} generate --video <url> --image alice-sheet.png --label music-video \
+    --prompt "Use [Video 1] as the soundtrack throughout, play the audio exactly as \
+              provided. [Image 1] is Alice, keep her face matching [Image 1]. Alice \
+              sings to camera, music-video aesthetic, 2.39:1." --duration 15 --wait
+
+For deeper prompt-writing (UGC vs marketing vs cinematic templates, platform-specific
+tips, decision trees for character consistency, word budgets), see the
+`seedance-prompting` skill.
 "#
     )
 }
@@ -117,9 +169,7 @@ pub fn install(ctx: Ctx) -> Result<(), AppError> {
     let mut results: Vec<InstallResult> = Vec::new();
     for target in &skill_targets() {
         let skill_path = target.path.join("SKILL.md");
-        if skill_path.exists()
-            && std::fs::read_to_string(&skill_path).is_ok_and(|c| c == content)
-        {
+        if skill_path.exists() && std::fs::read_to_string(&skill_path).is_ok_and(|c| c == content) {
             results.push(InstallResult {
                 platform: target.name.into(),
                 path: skill_path.display().to_string(),
@@ -163,8 +213,7 @@ pub fn status(ctx: Ctx) -> Result<(), AppError> {
     for target in &skill_targets() {
         let skill_path = target.path.join("SKILL.md");
         let (installed, current) = if skill_path.exists() {
-            let current =
-                std::fs::read_to_string(&skill_path).is_ok_and(|c| c == content);
+            let current = std::fs::read_to_string(&skill_path).is_ok_and(|c| c == content);
             (true, current)
         } else {
             (false, false)

@@ -105,20 +105,33 @@ pub fn run(
     let dur = format!("{}", HARD_DURATION_CAP_SECS);
     let mut cmd = std::process::Command::new("ffmpeg");
     cmd.args([
-        "-y", "-loglevel", "error",
-        "-f", "lavfi", "-i", &color_src,
+        "-y",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        &color_src,
         "-i",
     ])
     .arg(&input)
     .args([
-        "-t", &dur,
-        "-c:v", "libx264",
-        "-tune", "stillimage",
-        "-preset", "veryfast",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-movflags", "+faststart",
+        "-t",
+        &dur,
+        "-c:v",
+        "libx264",
+        "-tune",
+        "stillimage",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-movflags",
+        "+faststart",
     ])
     .arg(&out_path);
 

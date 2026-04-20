@@ -157,10 +157,15 @@ pub enum Commands {
     /// Build a 9-angle character reference sheet from a single photo (uses nanaban/Nano Banana Pro).
     /// The resulting grid can be passed to `generate --image` to keep a specific person
     /// consistent across Seedance shots -- works around ByteDance's single-face-block.
+    ///
+    /// For scenes with multiple characters, run this command once per character with
+    /// distinct --character names and pass every resulting sheet as a separate --image
+    /// to `generate`. Cap scenes at 2 characters; 3+ breaks identity lock.
     CharacterSheet {
         /// Input photo of the subject (path or URL)
         input: String,
-        /// Output PNG path (default: ~/Documents/seedance/character-sheet-<hash>.png)
+        /// Output PNG path. Default picks a deterministic name inside
+        /// ~/Documents/seedance[/<project>]/ (using --character when provided).
         #[arg(short = 'o', long)]
         output: Option<std::path::PathBuf>,
         /// Extra styling hints to append to the grid prompt
@@ -170,6 +175,14 @@ pub enum Commands {
         /// Grid size (9-angle 3x3 or 4-angle 2x2)
         #[arg(long, default_value_t = 9)]
         angles: u8,
+        /// Character name (e.g. "alice", "bob"). Used to name the output sheet
+        /// (`<character>-sheet.png`) and to keep multiple characters distinct
+        /// inside a project directory.
+        #[arg(long, value_name = "NAME")]
+        character: Option<String>,
+        /// Project name. Output lands in ~/Documents/seedance/<project>/.
+        #[arg(long, value_name = "NAME")]
+        project: Option<String>,
     },
 
     /// Wrap an audio file inside a silent mp4 so it can be fed as a `--video` reference.
@@ -270,7 +283,12 @@ pub struct GenerateArgs {
     pub first_frame: Option<String>,
 
     /// Image used as the last frame (role=last_frame). Requires --first-frame.
-    #[arg(long, value_name = "PATH|URL", requires = "first_frame", conflicts_with = "images")]
+    #[arg(
+        long,
+        value_name = "PATH|URL",
+        requires = "first_frame",
+        conflicts_with = "images"
+    )]
     pub last_frame: Option<String>,
 
     /// Reference video URL (role=reference_video). Repeatable, up to 3, total <=15s.
@@ -300,7 +318,11 @@ pub struct GenerateArgs {
     pub seed: i64,
 
     /// Generate audio synchronized with the video (default)
-    #[arg(long = "audio-sync", default_value_t = true, overrides_with = "no_audio_sync")]
+    #[arg(
+        long = "audio-sync",
+        default_value_t = true,
+        overrides_with = "no_audio_sync"
+    )]
     pub audio_sync: bool,
 
     /// Output a silent video
@@ -351,6 +373,18 @@ pub struct GenerateArgs {
     /// requests fired within 10 minutes are rejected so agent retries don't double-spend.
     #[arg(long)]
     pub force: bool,
+
+    /// Human-readable label for this shot. Included in the default filename
+    /// (e.g. `20260420T023015Z-alice-cafe-abc12345.mp4`) and in the sidecar
+    /// manifest. Ignored when --output is set to an explicit file path.
+    #[arg(long, value_name = "LABEL")]
+    pub label: Option<String>,
+
+    /// Project name. Outputs nest under ~/Documents/seedance/<project>/ instead
+    /// of the root seedance dir. Also recorded in the sidecar manifest.
+    /// Ignored when --output is set to an explicit file path.
+    #[arg(long, value_name = "NAME")]
+    pub project: Option<String>,
 }
 
 #[derive(Subcommand)]

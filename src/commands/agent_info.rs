@@ -31,11 +31,20 @@ pub fn run() {
                     {"name": "--callback-url",                     "type": "string", "required": false, "description": "Webhook to notify on status change"},
                     {"name": "--safety-identifier",                "type": "string", "required": false, "description": "Hashed end-user id (<=64 ASCII chars)"},
                     {"name": "--wait",              "short": "-w", "type": "bool", "required": false, "description": "Block until the task finishes"},
-                    {"name": "--output",            "short": "-o", "type": "path", "required": false, "description": "Output file path (implies --wait)"},
+                    {"name": "--output",            "short": "-o", "type": "path", "required": false, "description": "Output file path (implies --wait). Overrides --label/--project naming."},
+                    {"name": "--label",                            "type": "string", "required": false, "description": "Human-readable slug in the default filename (<timestamp>-<label>-<shortid>.mp4). Also recorded in the sidecar manifest."},
+                    {"name": "--project",                          "type": "string", "required": false, "description": "Group outputs under ~/Documents/seedance/<project>/. Recorded in the sidecar manifest."},
                     {"name": "--poll-interval",                    "type": "integer", "required": false, "default": 5, "description": "Seconds between polls while waiting"},
                     {"name": "--timeout",                          "type": "integer", "required": false, "default": 900, "description": "Max wait seconds (0 = unlimited)"},
+                    {"name": "--force",                            "type": "bool", "required": false, "description": "Override the 10-minute duplicate-guard on identical deterministic requests"},
                     {"name": "--api-key",                          "type": "string", "required": false, "description": "API key override (else SEEDANCE_API_KEY / ARK_API_KEY / config)"}
-                ]
+                ],
+                "sidecar_manifest": {
+                    "writes": "<mp4>.seedance.json next to every downloaded mp4",
+                    "schema": "seedance.v1",
+                    "fields": ["task_id", "model", "status", "created_at", "label", "project", "prompt", "resolution", "ratio", "duration", "seed", "generate_audio", "references", "video_url", "last_frame_url", "downloaded_to"],
+                    "purpose": "Agents inspect the sidecar to know which prompt produced which file; no filename guesswork."
+                }
             },
             "status": {
                 "description": "Retrieve a video generation task (alias: get)",
@@ -62,14 +71,16 @@ pub fn run() {
                 ]
             },
             "character-sheet": {
-                "description": "Build a 9-angle character reference sheet from a single photo via nanaban (Nano Banana Pro). Resulting PNG can be passed to `generate --image` to keep a specific person consistent across Seedance shots -- works around the single-face upload block.",
+                "description": "Build a 9-angle character reference sheet from a single photo via nanaban (Nano Banana Pro). Resulting PNG can be passed to `generate --image` to keep a specific person consistent across Seedance shots -- works around the single-face upload block. For scenes with multiple characters, run once per character with distinct --character names; pass each resulting sheet as a separate --image. Cap scenes at 2 characters (3+ breaks identity lock).",
                 "args": [
                     {"name": "input", "kind": "positional", "type": "string", "required": true, "description": "Path or URL of the subject photo"}
                 ],
                 "options": [
-                    {"name": "--output", "short": "-o", "type": "path",   "required": false, "description": "Output PNG path (default: ~/Documents/seedance/character-sheet-<hash>.png)"},
-                    {"name": "--style",                   "type": "string", "required": false, "description": "Extra styling hints to append to the grid prompt"},
-                    {"name": "--angles",                  "type": "integer", "required": false, "default": 9, "values": [4, 9], "description": "9 (3x3) or 4 (2x2) cells"}
+                    {"name": "--output",    "short": "-o", "type": "path",   "required": false, "description": "Output PNG path. Default picks a deterministic name inside ~/Documents/seedance[/<project>]/ based on --character."},
+                    {"name": "--style",                    "type": "string", "required": false, "description": "Extra styling hints to append to the grid prompt"},
+                    {"name": "--angles",                   "type": "integer", "required": false, "default": 9, "values": [4, 9], "description": "9 (3x3) or 4 (2x2) cells"},
+                    {"name": "--character",                "type": "string", "required": false, "description": "Character name (e.g. 'alice'). Output file becomes <character>-sheet.png. Required to distinguish multiple characters in one project."},
+                    {"name": "--project",                  "type": "string", "required": false, "description": "Nest output under ~/Documents/seedance/<project>/"}
                 ],
                 "requires": ["nanaban"],
                 "credit": "Community trick originated by @wtry1102 / @voxelplot Advanced Workflow #8"

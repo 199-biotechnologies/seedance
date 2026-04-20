@@ -80,10 +80,21 @@ If anything's wrong, `doctor` tells you which step to revisit.
 
 ```bash
 seedance generate --prompt "A cat yawns at the camera" --wait
-# -> ~/Documents/seedance/<task-id>.mp4
+# -> ~/Documents/seedance/20260420T023015Z-abc12345.mp4
+# -> ~/Documents/seedance/20260420T023015Z-abc12345.seedance.json   # sidecar manifest
 ```
 
-Default output is `~/Documents/seedance/`. Override with `-o /path/to/file.mp4` or `-o /some/dir/`.
+Default output is `~/Documents/seedance/`. Override with `-o /path/to/file.mp4` or `-o /some/dir/`, or use `--label` / `--project` to drive the default naming.
+
+```bash
+seedance generate --project cafe-scene --label alice-walk \
+  --image ~/Documents/seedance/cafe-scene/alice-sheet.png \
+  --prompt "..." --wait
+# -> ~/Documents/seedance/cafe-scene/20260420T023015Z-alice-walk-abc12345.mp4
+# -> ~/Documents/seedance/cafe-scene/20260420T023015Z-alice-walk-abc12345.seedance.json
+```
+
+Every `.seedance.json` sidecar carries the full prompt, references, model, seed, duration, and task id — so agents can read the directory and know exactly which prompt produced which mp4 without guessing.
 
 ## How it works
 
@@ -147,12 +158,45 @@ seedance download "$TASK" -o final.mp4
 
 Four helpers ship in the same binary, built to work around specific Seedance limits. Each one chains cleanly into `generate`.
 
-| Tool                         | What it does |
-|------------------------------|--------------|
-| `seedance character-sheet`   | Builds a 9-angle (or 4-angle) character sheet from a single photo via Nano Banana Pro. Feed the resulting PNG to `--image` to keep one person consistent across shots — bypasses the single-face-upload block. |
-| `seedance audio-to-video`    | Wraps an audio file in a silent mp4 (ffmpeg under the hood) so you can pass it as `--video` instead of `--audio`. Preserves lyrics exactly. `--upload` hosts the file on tmpfiles.org and prints the URL. |
-| `seedance prep-face`         | Applies an empirically verified grain + desaturation recipe so a real portrait clears ModelArk's face filter. `--bw` swaps to the pure grayscale variant. |
-| `seedance upload <file>`     | Uploads a local file to tmpfiles.org and prints a direct-download URL, ready to paste into `--video`. |
+| Tool                                      | What it does |
+|-------------------------------------------|--------------|
+| `seedance character-sheet --character N`  | Builds a 9-angle (or 4-angle) sheet from a single photo via Nano Banana Pro. Pass the resulting PNG to `--image` to keep one person consistent across shots. For multi-character scenes, run this once per person with distinct `--character` names and pass every sheet as a separate `--image`. |
+| `seedance audio-to-video`                 | Wraps an audio file in a silent mp4 (ffmpeg under the hood) so you can pass it as `--video` instead of `--audio`. Preserves lyrics exactly. `--upload` hosts the file on tmpfiles.org and prints the URL. |
+| `seedance prep-face`                      | Applies an empirically verified grain + desaturation recipe so a real portrait clears ModelArk's face filter. `--bw` swaps to the pure grayscale variant. |
+| `seedance upload <file>`                  | Uploads a local file to tmpfiles.org and prints a direct-download URL, ready to paste into `--video`. |
+
+### Multi-character scenes
+
+Cap scenes at **two characters**. Three or more in the same shot breaks identity lock — Seedance starts morphing faces across frames. For three-person scenes, split into two shots and intercut in post.
+
+```bash
+# One sheet per character, shared project folder
+seedance character-sheet alice.jpg --character alice --project cafe-scene
+seedance character-sheet bob.jpg   --character bob   --project cafe-scene
+
+# Generate with both sheets; each gets an explicit job in the prompt
+seedance generate --project cafe-scene --label cafe-opening \
+  --image ~/Documents/seedance/cafe-scene/alice-sheet.png \
+  --image ~/Documents/seedance/cafe-scene/bob-sheet.png \
+  --prompt "[Image 1] is Alice's 9-angle reference. Her face and hair match [Image 1] \
+            exactly. [Image 2] is Bob's 9-angle reference. His face and beard match \
+            [Image 2] exactly. [0-4s]: wide, Alice and Bob at a corner table in a \
+            sunlit Parisian cafe. [4-14s]: medium, Alice picks up her espresso cup." \
+  --duration 14 --ratio 16:9 --wait
+```
+
+### Prompting principles
+
+Seedance reads prompts literally. Do not rely on logic or genre shorthand — describe everything you need to see.
+
+- Every reference must have an **explicit job** in the prompt. Unnamed refs are silently dropped.
+- **One verb per shot.** Split multi-action scenes with time codes: `[0-4s]: ...; [4-9s]: ...`.
+- **Negative prompts do not work.** Phrase positively: "eyes natural, soft eye contact, blinks occasionally" beats "no weird eyes".
+- **Early tokens dominate.** Put camera language, subject, and style in the first half of the prompt.
+- **Prompt length: 30–200 words.** Too short underspecifies; too long causes detail dropout.
+- **Describe wardrobe, lighting, and setting concretely** even when it's visible in a reference — these drift more than faces do.
+
+For deeper prompt recipes (UGC vs marketing vs cinematic templates, chaining scenes into longer films, voice cloning workflows), see the `seedance-prompting` skill.
 
 ## Known Quirks
 

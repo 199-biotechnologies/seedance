@@ -9,6 +9,7 @@ use crate::api::{ApiClient, ContentItem, CreateTaskRequest, TaskInfo, UrlObject}
 use crate::cli::GenerateArgs;
 use crate::config::{self, DEFAULT_MODEL, DEFAULT_MODEL_FAST};
 use crate::error::AppError;
+use crate::manifest::{self, Manifest, References};
 use crate::media::{self, Kind};
 use crate::output::{self, Ctx, Format};
 
@@ -24,6 +25,8 @@ struct GenerateResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     downloaded_to: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    manifest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     task: Option<TaskInfo>,
 }
 
@@ -38,21 +41,22 @@ pub fn run(ctx: Ctx, args: GenerateArgs) -> Result<(), AppError> {
         )
     })?;
 
-    let model = args
-        .model
-        .clone()
-        .unwrap_or_else(|| {
-            if args.fast {
-                DEFAULT_MODEL_FAST.to_string()
-            } else if cfg.model == DEFAULT_MODEL {
-                DEFAULT_MODEL.to_string()
-            } else {
-                cfg.model.clone()
-            }
-        });
+    let model = args.model.clone().unwrap_or_else(|| {
+        if args.fast {
+            DEFAULT_MODEL_FAST.to_string()
+        } else if cfg.model == DEFAULT_MODEL {
+            DEFAULT_MODEL.to_string()
+        } else {
+            cfg.model.clone()
+        }
+    });
 
     let content = build_content(&args)?;
-    let generate_audio = if args.no_audio_sync { false } else { args.audio_sync };
+    let generate_audio = if args.no_audio_sync {
+        false
+    } else {
+        args.audio_sync
+    };
 
     let request = CreateTaskRequest {
         model: model.clone(),
@@ -89,17 +93,14 @@ pub fn run(ctx: Ctx, args: GenerateArgs) -> Result<(), AppError> {
             video_url: None,
             last_frame_url: None,
             downloaded_to: None,
+            manifest: None,
             task: None,
         };
         output::print_success_or(ctx, &result, |r| {
             use owo_colors::OwoColorize;
             println!("{} {}", "task id:".bold(), r.id.cyan());
             println!("model: {}", r.model);
-            println!(
-                "poll with: {} status {}",
-                "seedance".green(),
-                r.id.cyan()
-            );
+            println!("poll with: {} status {}", "seedance".green(), r.id.cyan());
         });
         return Ok(());
     }
@@ -127,28 +128,68 @@ pub fn run(ctx: Ctx, args: GenerateArgs) -> Result<(), AppError> {
         .map(|s| s.to_string())
         .ok_or_else(|| AppError::Transient("task succeeded but returned no video_url".into()))?;
 
-    // Always write the mp4 somewhere predictable -- ~/Documents/seedance/<id>.mp4
-    // unless the user pointed elsewhere with --output.
-    let out_path = args
-        .output
-        .clone()
-        .map(|p| normalize_output_path(p, &created.id))
-        .unwrap_or_else(|| default_output_dir().join(format!("{}.mp4", created.id)));
+    // Resolve output path. When the user passed --output we honour it verbatim
+    // (or join the task id if they pointed at a directory). Otherwise we compose
+    // a sortable name: <timestamp>-[<label>-]<short-id>.mp4, nested under the
+    // project dir when --project is set.
+    let out_path = if let Some(explicit) = args.output.clone() {
+        normalize_output_path(explicit, &created.id)
+    } else {
+        let dir = project_dir(args.project.as_deref());
+        dir.join(default_filename(&created.id, args.label.as_deref()))
+    };
     output::info(ctx, &format!("downloading to {}", out_path.display()));
     let bytes = api.download_video(&video_url, &out_path)?;
     output::info(ctx, &format!("wrote {bytes} bytes"));
-    let downloaded_to = Some(out_path.display().to_string());
+    let downloaded_to = out_path.display().to_string();
+
+    let last_frame_url = task.content.as_ref().and_then(|c| c.last_frame_url.clone());
+
+    let m = Manifest {
+        schema: "seedance.v1",
+        task_id: task.id.clone(),
+        model: task.model.clone().unwrap_or_else(|| model.clone()),
+        status: task.status.clone(),
+        created_at: task
+            .created_at
+            .map(manifest::iso8601_from_epoch_secs)
+            .unwrap_or_else(manifest::iso8601_now),
+        label: args.label.clone(),
+        project: args.project.clone(),
+        prompt: args.prompt.clone(),
+        resolution: Some(args.resolution.as_api().to_string()),
+        ratio: Some(args.ratio.as_api().to_string()),
+        duration: Some(args.duration),
+        seed: Some(args.seed),
+        generate_audio: Some(generate_audio),
+        references: References {
+            images: args.images.clone(),
+            videos: args.videos.clone(),
+            audio: args.audio.clone(),
+            first_frame: args.first_frame.clone(),
+            last_frame: args.last_frame.clone(),
+        },
+        video_url: Some(video_url.clone()),
+        last_frame_url: last_frame_url.clone(),
+        downloaded_to: downloaded_to.clone(),
+    };
+    let manifest_path = match manifest::write(&out_path, &m) {
+        Ok(p) => Some(p.display().to_string()),
+        Err(e) => {
+            // Non-fatal: the mp4 is on disk, we just couldn't persist metadata.
+            output::info(ctx, &format!("warning: manifest write failed: {e}"));
+            None
+        }
+    };
 
     let result = GenerateResult {
         id: task.id.clone(),
         model: task.model.clone().unwrap_or(model),
         status: task.status.clone(),
         video_url: Some(video_url),
-        last_frame_url: task
-            .content
-            .as_ref()
-            .and_then(|c| c.last_frame_url.clone()),
-        downloaded_to,
+        last_frame_url,
+        downloaded_to: Some(downloaded_to),
+        manifest: manifest_path,
         task: Some(task),
     };
 
@@ -161,6 +202,9 @@ pub fn run(ctx: Ctx, args: GenerateArgs) -> Result<(), AppError> {
         }
         if let Some(p) = &r.downloaded_to {
             println!("saved: {}", p.green());
+        }
+        if let Some(m) = &r.manifest {
+            println!("meta:  {}", m.dimmed());
         }
     });
     Ok(())
@@ -359,6 +403,28 @@ pub fn default_output_dir() -> PathBuf {
     home.join("Documents").join("seedance")
 }
 
+/// Resolve ~/Documents/seedance[/<project>]/ — where project is an optional slug.
+pub fn project_dir(project: Option<&str>) -> PathBuf {
+    let base = default_output_dir();
+    match project.and_then(manifest::slug) {
+        Some(p) if !p.is_empty() => base.join(p),
+        _ => base,
+    }
+}
+
+/// Filename for the default-path case:
+///   `<timestamp>Z-[<label>-]<short-id>.mp4`
+/// Timestamp sorts chronologically; label is a human anchor; short id keeps
+/// it unambiguous across duplicates.
+fn default_filename(task_id: &str, label: Option<&str>) -> String {
+    let ts = manifest::timestamp_compact();
+    let short = manifest::short_id(task_id);
+    match label.and_then(manifest::slug) {
+        Some(l) if !l.is_empty() => format!("{ts}-{l}-{short}.mp4"),
+        _ => format!("{ts}-{short}.mp4"),
+    }
+}
+
 // ── Duplicate guard ────────────────────────────────────────────────────────
 // Protects against accidental double-generation (agent retries, stuck shells)
 // on the paid `generate` path. Keyed by a hash of the canonical request so
@@ -443,4 +509,3 @@ fn fingerprint(req: &CreateTaskRequest) -> String {
     canonical.hash(&mut h);
     format!("{:016x}", h.finish())
 }
-

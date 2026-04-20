@@ -77,11 +77,7 @@ impl ApiClient {
     }
 
     /// Download the generated video to a local file. Returns bytes written.
-    pub fn download_video(
-        &self,
-        video_url: &str,
-        out: &std::path::Path,
-    ) -> Result<u64, AppError> {
+    pub fn download_video(&self, video_url: &str, out: &std::path::Path) -> Result<u64, AppError> {
         let mut resp = self.http.get(video_url).send()?;
         if !resp.status().is_success() {
             return Err(AppError::Transient(format!(
@@ -100,15 +96,16 @@ impl ApiClient {
     }
 }
 
-fn parse_json<T: for<'de> Deserialize<'de>>(resp: reqwest::blocking::Response) -> Result<T, AppError> {
+fn parse_json<T: for<'de> Deserialize<'de>>(
+    resp: reqwest::blocking::Response,
+) -> Result<T, AppError> {
     let status = resp.status();
     let body = resp.text().unwrap_or_default();
     if !status.is_success() {
         return Err(parse_error_body(status, &body));
     }
-    serde_json::from_str::<T>(&body).map_err(|e| {
-        AppError::Transient(format!("failed to parse API response ({e}): {body}"))
-    })
+    serde_json::from_str::<T>(&body)
+        .map_err(|e| AppError::Transient(format!("failed to parse API response ({e}): {body}")))
 }
 
 fn parse_error_body(status: reqwest::StatusCode, body: &str) -> AppError {

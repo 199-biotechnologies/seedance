@@ -63,8 +63,8 @@ pub fn config_path() -> PathBuf {
 }
 
 pub fn load() -> Result<AppConfig, AppError> {
-    use figment::providers::{Env, Format as _, Serialized, Toml};
     use figment::Figment;
+    use figment::providers::{Env, Format as _, Serialized, Toml};
 
     Figment::from(Serialized::defaults(AppConfig::default()))
         .merge(Toml::file(config_path()))

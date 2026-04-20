@@ -35,7 +35,11 @@ struct DoctorReport {
     summary: DoctorSummary,
 }
 
-fn companion_check(binary: &'static str, install_hint: &'static str, unlocks: &'static str) -> DoctorCheck {
+fn companion_check(
+    binary: &'static str,
+    install_hint: &'static str,
+    unlocks: &'static str,
+) -> DoctorCheck {
     match which::which(binary) {
         Ok(path) => DoctorCheck {
             name: binary,
@@ -174,9 +178,18 @@ pub fn run(ctx: Ctx, cfg: &AppConfig) -> Result<(), AppError> {
     ));
 
     let summary = DoctorSummary {
-        pass: checks.iter().filter(|c| c.status == CheckStatus::Pass).count(),
-        warn: checks.iter().filter(|c| c.status == CheckStatus::Warn).count(),
-        fail: checks.iter().filter(|c| c.status == CheckStatus::Fail).count(),
+        pass: checks
+            .iter()
+            .filter(|c| c.status == CheckStatus::Pass)
+            .count(),
+        warn: checks
+            .iter()
+            .filter(|c| c.status == CheckStatus::Warn)
+            .count(),
+        fail: checks
+            .iter()
+            .filter(|c| c.status == CheckStatus::Fail)
+            .count(),
     };
     let has_failures = summary.fail > 0;
 
@@ -190,12 +203,7 @@ pub fn run(ctx: Ctx, cfg: &AppConfig) -> Result<(), AppError> {
                 CheckStatus::Fail => ("[fail]", "[fail]".red().to_string()),
             };
             let _ = icon;
-            println!(
-                "{} {}: {}",
-                colored,
-                check.name.bold(),
-                check.message
-            );
+            println!("{} {}: {}", colored, check.name.bold(), check.message);
             if let Some(s) = &check.suggestion {
                 println!("    {}", s.dimmed());
             }

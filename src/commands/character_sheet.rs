@@ -9,6 +9,7 @@ use serde::Serialize;
 use std::path::PathBuf;
 
 use crate::error::AppError;
+use crate::manifest;
 use crate::output::{self, Ctx};
 
 #[derive(Serialize)]
@@ -16,8 +17,12 @@ struct SheetResult {
     input: String,
     output: String,
     angles: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    character: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project: Option<String>,
     model: &'static str,
-    hint: &'static str,
+    hint: String,
 }
 
 pub fn run(
@@ -26,6 +31,8 @@ pub fn run(
     output: Option<PathBuf>,
     style: Option<String>,
     angles: u8,
+    character: Option<String>,
+    project: Option<String>,
 ) -> Result<(), AppError> {
     if !(angles == 4 || angles == 9) {
         return Err(AppError::InvalidInput(format!(
@@ -38,7 +45,11 @@ pub fn run(
         ));
     }
 
-    let out_path = output.unwrap_or_else(|| default_sheet_path(&input));
+    let char_slug = character.as_deref().and_then(manifest::slug);
+    let project_slug = project.as_deref().and_then(manifest::slug);
+    let out_path = output.unwrap_or_else(|| {
+        default_sheet_path(&input, char_slug.as_deref(), project_slug.as_deref())
+    });
     if let Some(parent) = out_path.parent()
         && !parent.as_os_str().is_empty()
     {
@@ -83,17 +94,29 @@ pub fn run(
         )));
     }
 
+    let hint = match &char_slug {
+        Some(c) => format!(
+            "reference [Image N] as '{c}' in the prompt. For multi-character scenes, build one sheet per character and pass each as a separate --image."
+        ),
+        None => "pass to seedance with: --image <path>. For multi-character scenes, build one sheet per character.".to_string(),
+    };
+
     let result = SheetResult {
         input,
         output: out_path.display().to_string(),
         angles,
+        character: char_slug,
+        project: project_slug,
         model: "nano-banana-pro (gemini-3-pro-image-preview)",
-        hint: "pass to seedance with: --image <path>",
+        hint,
     };
 
     output::print_success_or(ctx, &result, |r| {
         use owo_colors::OwoColorize;
         println!("{} {}", "sheet:".bold(), r.output.green());
+        if let Some(c) = &r.character {
+            println!("name:  {c}");
+        }
         println!(
             "next:  {} generate --image {} --prompt '...' --wait",
             "seedance".cyan(),
@@ -145,17 +168,24 @@ fn build_prompt(angles: u8, style: Option<&str>) -> String {
     prompt
 }
 
-fn default_sheet_path(input: &str) -> PathBuf {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    input.hash(&mut h);
-    let hash = format!("{:08x}", h.finish());
+fn default_sheet_path(input: &str, character: Option<&str>, project: Option<&str>) -> PathBuf {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
-    home.join("Documents")
-        .join("seedance")
-        .join(format!("character-sheet-{hash}.png"))
+    let mut dir = home.join("Documents").join("seedance");
+    if let Some(p) = project {
+        dir = dir.join(p);
+    }
+    let filename = match character {
+        Some(c) => format!("{c}-sheet.png"),
+        None => {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut h = DefaultHasher::new();
+            input.hash(&mut h);
+            format!("character-sheet-{:08x}.png", h.finish())
+        }
+    };
+    dir.join(filename)
 }
