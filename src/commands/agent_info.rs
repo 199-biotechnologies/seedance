@@ -42,8 +42,10 @@ pub fn run() {
                 "sidecar_manifest": {
                     "writes": "<mp4>.seedance.json next to every downloaded mp4",
                     "schema": "seedance.v1",
-                    "fields": ["task_id", "model", "status", "created_at", "label", "project", "prompt", "resolution", "ratio", "duration", "seed", "generate_audio", "references", "video_url", "last_frame_url", "downloaded_to"],
-                    "purpose": "Agents inspect the sidecar to know which prompt produced which file; no filename guesswork."
+                    "source": "generate",
+                    "completeness": "full -- prompt and references are present.",
+                    "fields": ["task_id", "source", "model", "status", "created_at", "label", "project", "prompt", "resolution", "ratio", "duration", "seed", "generate_audio", "references", "video_url", "last_frame_url", "downloaded_to"],
+                    "purpose": "Agents inspect the sidecar to know which prompt produced which file; no filename guesswork. Key on the `source` field to distinguish generate-time (full) from download-time (partial) manifests."
                 }
             },
             "status": {
@@ -55,12 +57,19 @@ pub fn run() {
                 ]
             },
             "download": {
-                "description": "Download the video for a completed task",
+                "description": "Download the video for a completed task. Also writes a partial <file>.seedance.json sidecar (source=\"download\"). The BytePlus GetTask response does not echo the original request, so the download-time sidecar has null prompt and empty references; it carries task/download metadata only. For a full-request manifest, use generate --wait or keep the sidecar written at generation time.",
                 "args": [{"name": "id", "kind": "positional", "type": "string", "required": true}],
                 "options": [
-                    {"name": "--output", "short": "-o", "type": "path", "required": false, "description": "Output file path (default: <id>.mp4)"},
+                    {"name": "--output", "short": "-o", "type": "path", "required": false, "description": "Output file path. Defaults to ~/Documents/seedance/<id>.mp4. Directory path (trailing slash or existing dir) appends <id>.mp4."},
                     {"name": "--api-key", "type": "string", "required": false}
-                ]
+                ],
+                "sidecar_manifest": {
+                    "writes": "<mp4>.seedance.json next to every downloaded mp4",
+                    "schema": "seedance.v1",
+                    "source": "download",
+                    "completeness": "partial -- prompt and references are NOT present; GetTask does not return them. Use the generate-time sidecar for the full request log.",
+                    "fields": ["task_id", "model", "status", "created_at", "resolution", "ratio", "duration", "seed", "generate_audio", "video_url", "last_frame_url", "downloaded_to"]
+                }
             },
             "cancel": {
                 "description": "Cancel a queued task (alias: rm)",

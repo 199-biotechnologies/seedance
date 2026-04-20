@@ -136,3 +136,14 @@ pub fn info(ctx: Ctx, msg: &str) {
         eprintln!("{} {}", "::".cyan(), msg);
     }
 }
+
+/// Non-fatal warnings. Unlike `info`, these are NOT suppressed by `--quiet`,
+/// and the caller is expected to also surface the same fact inside the
+/// serialized result payload (so JSON consumers see it via the envelope,
+/// not via stderr).
+pub fn warn(ctx: Ctx, msg: &str) {
+    if matches!(ctx.format, Format::Human) {
+        use owo_colors::OwoColorize;
+        eprintln!("{} {}", "warning:".yellow().bold(), msg);
+    }
+}

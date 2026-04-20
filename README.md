@@ -94,7 +94,12 @@ seedance generate --project cafe-scene --label alice-walk \
 # -> ~/Documents/seedance/cafe-scene/20260420T023015Z-alice-walk-abc12345.seedance.json
 ```
 
-Every `.seedance.json` sidecar carries the full prompt, references, model, seed, duration, and task id — so agents can read the directory and know exactly which prompt produced which mp4 without guessing.
+Sidecars written by `generate --wait` carry the full request — prompt, references, model, seed, duration, task id, timestamps — with `"source": "generate"`. Sidecars written by the bare `seedance download` command carry task/download metadata only (the BytePlus GetTask response doesn't echo the original request back) with `"source": "download"`. Agents should key on `.source` before trusting either:
+
+```bash
+jq 'select(.source == "generate") | {file: .downloaded_to, label, prompt}' \
+  ~/Documents/seedance/**/*.seedance.json
+```
 
 ## How it works
 

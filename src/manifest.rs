@@ -13,6 +13,13 @@ pub const MANIFEST_EXT: &str = "seedance.json";
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Manifest {
     pub schema: &'static str,
+    /// Which code path wrote this sidecar. `"generate"` means the manifest
+    /// was written from the originating `generate --wait` call and carries
+    /// the full request payload (prompt + references). `"download"` means it
+    /// was reconstructed from the API's GetTask response, which does not
+    /// echo the original request -- so `prompt` is null and `references`
+    /// is empty. Agents should key on this field before trusting either.
+    pub source: &'static str,
     pub task_id: String,
     pub model: String,
     pub status: String,

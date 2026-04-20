@@ -15,6 +15,10 @@ struct DownloadResult {
     video_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     manifest: Option<String>,
+    /// Set if the sidecar manifest could not be written. The mp4 is still
+    /// on disk; only the tracking metadata is missing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    manifest_error: Option<String>,
 }
 
 pub fn run(
@@ -47,13 +51,16 @@ pub fn run(
     output::info(ctx, &format!("downloading to {}", path.display()));
     let bytes = api.download_video(&video_url, &path)?;
 
-    // Reconstruct a manifest from whatever the API echoed back. We won't have
-    // the original prompt here (the API doesn't return the request payload),
-    // so `prompt` is left None. The manifest is still useful as a trail:
-    // task id, model, resolution, seed, duration, timestamps.
+    // Reconstruct a sidecar from whatever the API echoed back. BytePlus's
+    // GetTask response does not include the original request, so this
+    // manifest carries only task metadata -- `prompt` is null and
+    // `references` is empty. `source: "download"` tells agents to treat it
+    // as a partial, not a full-request log. For full-request sidecars, use
+    // `generate --wait` or keep the one written at generation time.
     let last_frame_url = task.content.as_ref().and_then(|c| c.last_frame_url.clone());
     let m = Manifest {
         schema: "seedance.v1",
+        source: "download",
         task_id: task.id.clone(),
         model: task.model.clone().unwrap_or_default(),
         status: task.status.clone(),
@@ -74,11 +81,12 @@ pub fn run(
         last_frame_url,
         downloaded_to: path.display().to_string(),
     };
-    let manifest_path = match manifest::write(&path, &m) {
-        Ok(p) => Some(p.display().to_string()),
+    let (manifest_path, manifest_error) = match manifest::write(&path, &m) {
+        Ok(p) => (Some(p.display().to_string()), None),
         Err(e) => {
-            output::info(ctx, &format!("warning: manifest write failed: {e}"));
-            None
+            let msg = format!("manifest write failed: {e}");
+            output::warn(ctx, &msg);
+            (None, Some(msg))
         }
     };
 
@@ -88,6 +96,7 @@ pub fn run(
         bytes,
         video_url,
         manifest: manifest_path,
+        manifest_error,
     };
     output::print_success_or(ctx, &result, |r| {
         use owo_colors::OwoColorize;

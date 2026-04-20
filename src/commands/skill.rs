@@ -43,9 +43,13 @@ Key flags for `generate`:
   --project               Nest output under ~/Documents/seedance/<project>/
 
 Every `--wait`ed generate writes a sidecar `<file>.seedance.json` beside the mp4
-containing the full request (prompt, refs, model, seed, duration, task id, timestamps).
-Agents: read the sidecar instead of guessing which prompt produced which file.
-Example: `for f in *.seedance.json; do jq -r '[.downloaded_to, .label, .prompt] | @tsv' "$f"; done`.
+(schema `seedance.v1`, source `"generate"`) containing the full request:
+prompt, references, model, seed, duration, task id, timestamps. The bare
+`{name} download <id>` command also writes a sidecar, but marked source
+`"download"` -- the BytePlus GetTask response does not echo the original
+request back, so download-time sidecars have null `prompt` and empty
+`references`. Key on `.source` to tell them apart:
+  jq 'select(.source == "generate") | {{file: .downloaded_to, label, prompt}}' *.seedance.json
 
 Companion subcommands:
   {name} character-sheet <photo> --character NAME [--project NAME]
@@ -69,19 +73,24 @@ Setup + auth:
   # or: export SEEDANCE_API_KEY / ARK_API_KEY
   # get a key: https://console.byteplus.com/ark
 
-Prompting principles (Seedance is prompt-sensitive, do not rely on logic):
-  * Describe every visible element explicitly. Do not say "the lighting is appropriate";
-    say "soft window light from camera-right, no ring light, slight motion blur".
-  * Give every reference an explicit job. Unnamed refs are dropped silently.
-    "[Image 1] for Alice's face and hair only, not her clothing. [Image 2] for the
-     leather jacket." beats "use these references".
+Prompting principles. Seedance reads prompts literally. It does not run
+inference on "why" something is happening, and it does not fill in plausible
+detail. Do not rely on logic, reputation, or genre shorthand. Describe.
+  * Every visible element needs an explicit description. Not "cinematic
+    lighting" -- "soft window light from camera-right, 3200K warm, no ring
+    light, slight bounce fill on the left". Not "she looks confident" --
+    "she looks straight at the lens, mouth relaxed, shoulders square".
+  * Every reference needs an explicit job in the prompt. Unnamed refs are
+    dropped silently. "[Image 1] for Alice's face and hair only, not her
+    clothing. [Image 2] for the leather jacket." beats "use these references".
   * One verb per shot. Split multi-action shots into time-coded beats:
     "[0-4s]: Alice walks in; [4-9s]: Alice sits; [9-15s]: Alice smiles at Bob".
-  * Negative prompts do not work. Rephrase positively. Not "no weird eyes", but
-    "eyes natural, soft eye contact with the lens, blinks occasionally".
-  * Early tokens dominate. Put camera language, subject, and style in the first half.
-  * Prompt length 30-200 words. Too short = underspecified; too long = details ignored.
-  * Plain literal language beats clever language.
+  * Negative prompts do not work. Rephrase positively. Not "no weird eyes",
+    but "eyes natural, soft eye contact with the lens, blinks occasionally".
+  * Early tokens dominate. Put camera language, subject, and style in the
+    first half of the prompt. Tail content gets soft-ignored.
+  * Prompt length 30-200 words. Too short underspecifies; too long causes
+    detail dropout.
 
 Multi-character workflow:
   # One sheet per person, named
@@ -107,14 +116,18 @@ Output of the last command:
 
 Consistent-person-only workflow (no second character):
   {name} character-sheet ./subject.jpg --character alice
-  {name} generate --image ~/Documents/seedance/alice-sheet.png --label alice-walk \
+  # -> ~/Documents/seedance/alice-sheet.png
+  {name} generate --label alice-walk \
+    --image ~/Documents/seedance/alice-sheet.png \
     --prompt "[Image 1] is Alice's 9-angle reference. Her face and hair match [Image 1] \
               exactly. Medium tracking shot, Alice walks through a sunlit Parisian \
               cafe, handheld, warm natural window light." --duration 10 --wait
 
 Exact music / dialogue (preserves lyrics verbatim):
   {name} audio-to-video song.mp3 --upload          # prints a public URL
-  {name} generate --video <url> --image alice-sheet.png --label music-video \
+  {name} generate --label music-video \
+    --video <url> \
+    --image ~/Documents/seedance/alice-sheet.png \
     --prompt "Use [Video 1] as the soundtrack throughout, play the audio exactly as \
               provided. [Image 1] is Alice, keep her face matching [Image 1]. Alice \
               sings to camera, music-video aesthetic, 2.39:1." --duration 15 --wait

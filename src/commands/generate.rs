@@ -26,6 +26,11 @@ struct GenerateResult {
     downloaded_to: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     manifest: Option<String>,
+    /// Set if the sidecar manifest could not be written. The mp4 is still
+    /// on disk; only the tracking metadata is missing. Surfaced so JSON
+    /// consumers can detect the condition that `--quiet` hides in stderr.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    manifest_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     task: Option<TaskInfo>,
 }
@@ -94,6 +99,7 @@ pub fn run(ctx: Ctx, args: GenerateArgs) -> Result<(), AppError> {
             last_frame_url: None,
             downloaded_to: None,
             manifest: None,
+            manifest_error: None,
             task: None,
         };
         output::print_success_or(ctx, &result, |r| {
@@ -128,15 +134,20 @@ pub fn run(ctx: Ctx, args: GenerateArgs) -> Result<(), AppError> {
         .map(|s| s.to_string())
         .ok_or_else(|| AppError::Transient("task succeeded but returned no video_url".into()))?;
 
-    // Resolve output path. When the user passed --output we honour it verbatim
-    // (or join the task id if they pointed at a directory). Otherwise we compose
-    // a sortable name: <timestamp>-[<label>-]<short-id>.mp4, nested under the
-    // project dir when --project is set.
-    let out_path = if let Some(explicit) = args.output.clone() {
-        normalize_output_path(explicit, &created.id)
-    } else {
-        let dir = project_dir(args.project.as_deref());
-        dir.join(default_filename(&created.id, args.label.as_deref()))
+    // Resolve output path. If --output points at an existing dir or ends in a
+    // separator, treat it as an explicit parent dir and still apply the
+    // sortable <timestamp>-[<label>-]<short-id>.mp4 filename. If --output is a
+    // concrete file path, honour it verbatim. If --output is absent, default
+    // to ~/Documents/seedance[/<project>]/<sortable>.mp4.
+    warn_on_slug_collapse(ctx, "label", args.label.as_deref());
+    warn_on_slug_collapse(ctx, "project", args.project.as_deref());
+    let out_path = match args.output.clone() {
+        Some(explicit) if is_directory_target(&explicit) => {
+            explicit.join(default_filename(&created.id, args.label.as_deref()))
+        }
+        Some(explicit) => explicit,
+        None => project_dir(args.project.as_deref())
+            .join(default_filename(&created.id, args.label.as_deref())),
     };
     output::info(ctx, &format!("downloading to {}", out_path.display()));
     let bytes = api.download_video(&video_url, &out_path)?;
@@ -147,6 +158,7 @@ pub fn run(ctx: Ctx, args: GenerateArgs) -> Result<(), AppError> {
 
     let m = Manifest {
         schema: "seedance.v1",
+        source: "generate",
         task_id: task.id.clone(),
         model: task.model.clone().unwrap_or_else(|| model.clone()),
         status: task.status.clone(),
@@ -173,12 +185,15 @@ pub fn run(ctx: Ctx, args: GenerateArgs) -> Result<(), AppError> {
         last_frame_url: last_frame_url.clone(),
         downloaded_to: downloaded_to.clone(),
     };
-    let manifest_path = match manifest::write(&out_path, &m) {
-        Ok(p) => Some(p.display().to_string()),
+    // Non-fatal: the mp4 is on disk even if we can't persist the sidecar.
+    // Surface the failure both on stderr (human mode, not suppressed by
+    // --quiet) AND in the JSON envelope, so agents don't silently miss it.
+    let (manifest_path, manifest_error) = match manifest::write(&out_path, &m) {
+        Ok(p) => (Some(p.display().to_string()), None),
         Err(e) => {
-            // Non-fatal: the mp4 is on disk, we just couldn't persist metadata.
-            output::info(ctx, &format!("warning: manifest write failed: {e}"));
-            None
+            let msg = format!("manifest write failed: {e}");
+            output::warn(ctx, &msg);
+            (None, Some(msg))
         }
     };
 
@@ -190,6 +205,7 @@ pub fn run(ctx: Ctx, args: GenerateArgs) -> Result<(), AppError> {
         last_frame_url,
         downloaded_to: Some(downloaded_to),
         manifest: manifest_path,
+        manifest_error,
         task: Some(task),
     };
 
@@ -208,6 +224,29 @@ pub fn run(ctx: Ctx, args: GenerateArgs) -> Result<(), AppError> {
         }
     });
     Ok(())
+}
+
+/// True when the caller clearly intended `path` as a *directory*, not a file:
+/// either it already exists as a dir, or the trailing char is a path separator.
+fn is_directory_target(path: &std::path::Path) -> bool {
+    path.is_dir() || path.to_string_lossy().ends_with(std::path::MAIN_SEPARATOR)
+}
+
+/// Emit a stderr warning when a non-empty user-supplied label/project collapsed
+/// entirely after slugging (e.g. non-Latin input, all punctuation). Silent
+/// when the input was empty or absent.
+fn warn_on_slug_collapse(ctx: Ctx, flag: &str, raw: Option<&str>) {
+    if let Some(r) = raw
+        && !r.trim().is_empty()
+        && manifest::slug(r).is_none()
+    {
+        output::warn(
+            ctx,
+            &format!(
+                "--{flag} {r:?} contains no ASCII alphanumerics; it will not appear in the filename or directory. Use an ASCII slug to keep the shot labelled."
+            ),
+        );
+    }
 }
 
 fn validate(args: &GenerateArgs) -> Result<(), AppError> {
@@ -383,14 +422,6 @@ fn wait_for_task(
             continue;
         }
         std::thread::sleep(sleep_for);
-    }
-}
-
-fn normalize_output_path(path: PathBuf, id: &str) -> PathBuf {
-    if path.is_dir() || path.to_string_lossy().ends_with(std::path::MAIN_SEPARATOR) {
-        path.join(format!("{id}.mp4"))
-    } else {
-        path
     }
 }
 

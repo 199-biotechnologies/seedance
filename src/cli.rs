@@ -38,7 +38,11 @@ Tips:
     baked in, then pass it as --video (credit: @simeonnz via @MrDavids1)
   * Use --wait to block until the task finishes and download the result in one command
   * Real human faces in references are blocked -- use faces from previously generated Seedance videos
-  * Default output dir: ~/Documents/seedance/<task-id>.mp4 (override with -o /path/to/file.mp4)
+  * Default output path: ~/Documents/seedance[/<project>]/<timestamp>-[<label>-]<short-id>.mp4
+    Override with -o /path/to/file.mp4 (honoured verbatim) or -o /some/dir/ (parent dir only;
+    the timestamp+label+short-id filename still applies inside it).
+  * Every --wait run writes a sibling <file>.seedance.json sidecar with the full prompt,
+    refs, model, seed, and task id so agents can audit which clip came from which prompt.
   * For a consistent person: `seedance character-sheet <photo>` (uses nanaban), then
     pass the resulting PNG as --image. Bypasses Seedance's single-face upload block.
   * For exact music/dialogue: `seedance audio-to-video <audio>` (uses ffmpeg) -> host the
@@ -132,11 +136,18 @@ pub enum Commands {
         api_key: Option<String>,
     },
 
-    /// Download the generated video for a completed task
+    /// Download the generated video for a completed task. Also writes a
+    /// partial <file>.seedance.json sidecar (source="download"): the API
+    /// does not echo the original request back on GetTask, so the prompt
+    /// and reference list are NOT in the download-time sidecar. For a
+    /// full-request manifest, use `generate --wait` or keep the sidecar
+    /// written at generation time.
     Download {
         /// Task id
         id: String,
-        /// Output file path (default: <id>.mp4 in current dir)
+        /// Output file path. Defaults to ~/Documents/seedance/<id>.mp4.
+        /// A directory path (trailing `/` or existing dir) is treated as
+        /// the parent and `<id>.mp4` is appended.
         #[arg(long, short = 'o')]
         output: Option<std::path::PathBuf>,
         /// API key override
@@ -353,7 +364,10 @@ pub struct GenerateArgs {
     #[arg(long, short = 'w')]
     pub wait: bool,
 
-    /// Output file path (implies --wait). Defaults to <id>.mp4 when --wait is set alone.
+    /// Output path (implies --wait). A file path is honoured verbatim; a
+    /// directory path (trailing `/` or existing dir) keeps the sortable
+    /// default filename inside it. When omitted, writes to
+    /// ~/Documents/seedance[/<project>]/<timestamp>-[<label>-]<short-id>.mp4.
     #[arg(long, short = 'o', value_name = "PATH")]
     pub output: Option<std::path::PathBuf>,
 

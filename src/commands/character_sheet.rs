@@ -45,6 +45,8 @@ pub fn run(
         ));
     }
 
+    warn_on_slug_collapse(ctx, "character", character.as_deref());
+    warn_on_slug_collapse(ctx, "project", project.as_deref());
     let char_slug = character.as_deref().and_then(manifest::slug);
     let project_slug = project.as_deref().and_then(manifest::slug);
     let out_path = output.unwrap_or_else(|| {
@@ -96,9 +98,9 @@ pub fn run(
 
     let hint = match &char_slug {
         Some(c) => format!(
-            "reference [Image N] as '{c}' in the prompt. For multi-character scenes, build one sheet per character and pass each as a separate --image."
+            "reference [Image N] as '{c}' in the prompt. For multi-character scenes, build one sheet per character and pass each as a separate --image. Cap a shot at 2 characters; split 3+ across separate shots and intercut in post."
         ),
-        None => "pass to seedance with: --image <path>. For multi-character scenes, build one sheet per character.".to_string(),
+        None => "pass to seedance with: --image <path>. For multi-character scenes, build one sheet per character. Cap a shot at 2 characters; split 3+ across separate shots and intercut in post.".to_string(),
     };
 
     let result = SheetResult {
@@ -166,6 +168,22 @@ fn build_prompt(angles: u8, style: Option<&str>) -> String {
         prompt.push('.');
     }
     prompt
+}
+
+/// Emit a stderr warning when a non-empty user-supplied slug collapsed to
+/// None (e.g. all-non-ASCII). Silent when the input was empty or absent.
+fn warn_on_slug_collapse(ctx: Ctx, flag: &str, raw: Option<&str>) {
+    if let Some(r) = raw
+        && !r.trim().is_empty()
+        && manifest::slug(r).is_none()
+    {
+        output::warn(
+            ctx,
+            &format!(
+                "--{flag} {r:?} contains no ASCII alphanumerics; falling back to a hashed default. Use an ASCII slug to keep the file labelled."
+            ),
+        );
+    }
 }
 
 fn default_sheet_path(input: &str, character: Option<&str>, project: Option<&str>) -> PathBuf {
