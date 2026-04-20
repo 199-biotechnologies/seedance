@@ -215,12 +215,6 @@ fn validate(args: &GenerateArgs) -> Result<(), AppError> {
         )));
     }
 
-    if args.audio_sync && args.no_audio_sync {
-        return Err(AppError::InvalidInput(
-            "--audio-sync and --no-audio-sync are mutually exclusive".into(),
-        ));
-    }
-
     Ok(())
 }
 
